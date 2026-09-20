@@ -21,11 +21,12 @@ def _write_experiment(
     run_split="test",
     run_num_beams=1,
     run_aspect_inventory=None,
+    domain="hotels",
 ):
     root.mkdir(parents=True)
     (root / "config.yaml").write_text(
         "experiment:\n"
-        f"  name: {root.name}\n  domain: hotels\n  split_mode: {split_mode}\n  seed: 42\n"
+        f"  name: {root.name}\n  domain: {domain}\n  split_mode: {split_mode}\n  seed: 42\n"
         f"model:\n  type: {model_type}\n  model_name: {model_name}\n  tokenizer_name: {model_name}\n"
         "training:\n  epochs: 20\n  batch_size: 16\n  gradient_accumulation_steps: 1\n"
         "  learning_rate: 0.0003\n  weight_decay: 0.0\n  warmup_ratio: 0.0\n  optimizer: AdamW\n  scheduler: linear\n"
@@ -38,7 +39,7 @@ def _write_experiment(
         encoding="utf-8",
     )
     experiment_metadata = {
-        "domain": "hotels", "split_mode": split_mode, "dataset_version": "oats_xml_v1",
+        "domain": domain, "split_mode": split_mode, "dataset_version": "oats_xml_v1",
         "sentiment_mode": "paper_compatible", "seed": 42,
         "model_type": model_type, "model_backbone": model_name, "tokenizer": model_name,
         "cleaning_configuration": {
@@ -71,7 +72,7 @@ def _write_experiment(
         "model_type": model_type,
         "model_backbone": model_name,
         "tokenizer": model_name,
-        "domain": "hotels",
+        "domain": domain,
         "split_mode": split_mode,
         "dataset_version": "oats_xml_v1",
         "sentiment_mode": "paper_compatible",
@@ -86,7 +87,7 @@ def _write_experiment(
             },
         },
         "dataset_identity": {
-            "domain": "hotels",
+            "domain": domain,
             "dataset_version": "oats_xml_v1",
             "split_mode": split_mode,
             "sentiment_mode": "paper_compatible",
@@ -117,6 +118,18 @@ def test_compare_writes_report_only_for_compatible_gas_and_paraphrase(tmp_path: 
     assert output.name == "hotels_gas_vs_paraphrase.json"
     result = json.loads(output.read_text(encoding="utf-8"))
     assert [row["model_type"] for row in result["models"]] == ["gas", "paraphrase"]
+
+
+@pytest.mark.parametrize("domain", ["amazon_ff", "coursera", "hotels"])
+def test_compare_names_output_for_each_supported_domain(tmp_path: Path, domain: str):
+    gas = tmp_path / f"gas-{domain}"
+    paraphrase = tmp_path / f"paraphrase-{domain}"
+    _write_experiment(gas, "gas", "t5-base", domain=domain)
+    _write_experiment(paraphrase, "paraphrase", "t5-base", domain=domain)
+
+    output = compare_experiments(gas, paraphrase, tmp_path / "comparisons" / "seed42")
+
+    assert output.name == f"{domain}_gas_vs_paraphrase.json"
 
 
 def test_compare_rejects_different_split_modes(tmp_path: Path):

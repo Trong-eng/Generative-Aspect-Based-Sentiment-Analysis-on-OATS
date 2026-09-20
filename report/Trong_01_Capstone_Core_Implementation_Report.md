@@ -20,7 +20,7 @@ Target và opinion có thể là `NULL`; câu có thể có 0, 1 hoặc nhiều 
 
 ## 4. Vấn đề split cần lưu ý
 
-Task brief và cấu trúc dữ liệu cho thấy cần kiểm tra các câu có `[]` và review XML chưa được annotate. Không được xóa từng câu rỗng một cách máy móc: câu rỗng trong một review đã có annotation vẫn là negative example hợp lệ. Review không có quadruple được phân thành `confirmed_unannotated`, `legitimate_zero_opinion` hoặc `unknown`; không có manifest chứng cứ thì mặc định là `unknown` và được giữ. Chỉ ID ghi rõ trong manifest có provenance mới có thể bị loại. Audit ghi các trạng thái này và leakage. **Chưa chạy audit nên không báo số liệu Coursera/Hotels hoặc kết luận nguyên nhân split từ thực nghiệm.**
+Task brief và cấu trúc dữ liệu cho thấy cần kiểm tra các câu có `[]` và review XML chưa được annotate. Không được xóa từng câu rỗng một cách máy móc: câu rỗng trong một review đã có annotation vẫn là negative example hợp lệ. Review không có quadruple được phân thành `confirmed_unannotated`, `legitimate_zero_opinion` hoặc `unknown`; không có manifest chứng cứ thì mặc định là `unknown` và được giữ. Chỉ ID ghi rõ trong manifest có provenance mới có thể bị loại. Audit ghi các trạng thái này và leakage. **Chưa chạy audit nên không báo số liệu Amazon_FF, Coursera hoặc Hotels, và chưa kết luận nguyên nhân split từ thực nghiệm.**
 
 ## 5. Data Audit
 
@@ -28,7 +28,7 @@ Task brief và cấu trúc dữ liệu cho thấy cần kiểm tra các câu có
 
 ## 6. XML/TXT Parser và data model
 
-`capstone/types.py` định nghĩa `Quadruple`, `SentenceRecord`, `ReviewRecord` có `to_dict/from_dict`. `capstone/data/parser.py` đọc XML không xóa câu rỗng, kiểm tra span offsets và ghi issue cho annotation thiếu trường, category sai hoặc offset đáng ngờ. Hotels resolver nằm trong `capstone/data/paths.py`.
+`capstone/types.py` định nghĩa `Quadruple`, `SentenceRecord`, `ReviewRecord` có `to_dict/from_dict`. `capstone/data/parser.py` đọc XML không xóa câu rỗng, kiểm tra span offsets và ghi issue cho annotation thiếu trường, category sai hoặc offset đáng ngờ. Resolver trong `capstone/data/paths.py` ánh xạ đủ ba domain tới XML/TXT tương ứng và ưu tiên bản Hotels đã sửa khi phù hợp.
 
 Parser split TXT dùng `ast.literal_eval`, kiểm tra đúng bốn trường và gắn row với sentence XML để giữ review ID. Khi text trùng và label không phân biệt được candidate duy nhất, parser dừng với lỗi ambiguity thay vì tự gán review.
 
@@ -72,7 +72,7 @@ Evaluator và `capstone/error_analysis.py` ghi TP/FP/FN, wrong-field mismatch (t
 
 ## 15. Config System
 
-Hai cấu hình Hotels là `configs/gas_t5_hotels.yaml` và `configs/paraphrase_t5_hotels.yaml`. Config có domain/split/seed, model/tokenizer, optimizer/scheduler, epochs/batch/gradient accumulation, learning rate/weight decay/warmup, input/output lengths, generation, sentiment/cleaning policy, audit/evaluation settings và paths. Paths tương đối được resolve theo repository (hoặc thư mục gốc của config trong `configs/`). Training lưu snapshot config và metadata.
+Repository có sáu cấu hình tạo thành ma trận `gas|paraphrase × amazon_ff|coursera|hotels`. Mỗi cặp cùng domain dùng chung seed 42, split, preprocessing, hyperparameters và generation settings; tên experiment và output directory là duy nhất. Config có domain/split/seed, model/tokenizer, optimizer/scheduler, epochs/batch/gradient accumulation, learning rate/weight decay/warmup, input/output lengths, generation, sentiment/cleaning policy, audit/evaluation settings và paths. Paths tương đối được resolve theo repository (hoặc thư mục gốc của config trong `configs/`). Training lưu snapshot config và metadata. Raw audit yêu cầu `--domain` hoặc `--all-domains`; preparation yêu cầu `--domain` hoặc một config có `experiment.domain`, tránh vô tình chỉ chạy Hotels.
 
 Giá trị T5-base, batch 16, learning rate `3e-4`, 20 epochs lấy từ paper/reference code trong phạm vi tài liệu có thể đối chiếu; nhiều hyperparameter OATS không công bố đầy đủ. Sequence length 128, accumulation 1, greedy decoding và seed 42 là config của pipeline này, không tự nhận là cài đặt chính thức OATS. Checkpoint được chọn theo validation exact-match F1; khi tie giữ checkpoint đầu tiên đạt best.
 
@@ -92,7 +92,7 @@ Các command trong README/runbook chỉ được ghi để chạy về sau; chú
 
 ## 17. Tests
 
-Tests được viết cho types, XML/TXT parsing, clean/filter policies, evidence manifest, review-level split/leakage, audit/JSONL/source/split metadata, domain ontology, GAS và Paraphrase serialization/parsing, NULL, normalization, exact match, duplicate prediction, malformed generation, error analysis, evaluation/comparison provenance, config/early-stopping type, mocked training artifact metadata/logging và seeding. `requirements-dev.txt` ghi pytest. Mocked training test không tải model hay gọi network, nhưng test vẫn chưa được chạy.
+Tests được viết cho types, XML/TXT parsing, clean/filter policies, evidence manifest, review-level split/leakage, audit/JSONL/source/split metadata, domain ontology, GAS và Paraphrase serialization/parsing, NULL, normalization, exact match, duplicate prediction, malformed generation, error analysis, evaluation/comparison provenance, config/early-stopping type, mocked training artifact metadata/logging và seeding. Các test đặc tả mới kiểm tra đủ sáu cấu hình, resolver cho cả ba domain, CLI không ngầm chọn Hotels và tên comparison theo domain. `requirements-dev.txt` ghi pytest. Mocked training test không tải model hay gọi network, nhưng toàn bộ test vẫn chưa được chạy.
 
 **Tests have been written but have NOT been executed.**
 
@@ -109,7 +109,7 @@ Tests được viết cho types, XML/TXT parsing, clean/filter policies, evidenc
 | `capstone/training/__init__.py`, `training/seed.py`, `training/trainer.py`, `capstone/train.py` | Seed, training loop, CLI | New |
 | `capstone/evaluation/__init__.py`, `evaluation/normalization.py`, `evaluation/metrics.py` | Shared normalizer, official/diagnostic scores, errors | New |
 | `capstone/evaluate.py`, `capstone/predict.py`, `capstone/compare.py`, `capstone/error_analysis.py` | Evaluation, inference, comparison, errors CLIs | New |
-| `configs/gas_t5_hotels.yaml`, `configs/paraphrase_t5_hotels.yaml` | Example experiment settings | New |
+| `configs/gas_t5_{amazon_ff,coursera,hotels}.yaml`, `configs/paraphrase_t5_{amazon_ff,coursera,hotels}.yaml` | Sáu experiment settings cho ma trận 2 mô hình × 3 domain | New |
 | `docs/paper_reference.md` | Paper scores, citations, implementation assumptions | New |
 | `tests/data/test_types.py`, `test_parser.py`, `test_cleaning.py`, `test_manifest.py`, `test_inventory.py`, `test_prepare_manifest.py`, `test_splitting.py`, `test_audit_serialization.py`, `test_processed_audit.py`, `tests/test_audit_data.py` | Data/type tests | New |
 | `tests/models/test_gas.py`, `tests/models/test_paraphrase.py` | Adapter tests | New |
@@ -132,6 +132,7 @@ Tests được viết cho types, XML/TXT parsing, clean/filter policies, evidenc
 - `UNVERIFIED — requires execution`: test suite, audit, XML/TXT alignment trên toàn bộ corpus, prepare output và review leakage artifacts.
 - `UNVERIFIED — requires execution`: tương thích runtime của PyTorch/Transformers, tải T5, memory/sequence truncation, convergence, training artifacts/checkpoint selection.
 - `UNVERIFIED — requires execution`: generation quality, output validity, metrics, diagnostics, compare và error-analysis artifacts.
+- `UNVERIFIED — requires execution`: đủ ba processed dataset, sáu experiment seed 42 và ba comparison cùng domain.
 - Chưa cài dependency nào; chưa tạo processed dataset, checkpoint, prediction, metric hoặc benchmark result.
 
 ## Tham khảo paper

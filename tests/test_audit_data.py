@@ -1,7 +1,9 @@
 import json
 from pathlib import Path
 
-from capstone.audit_data import audit_domain
+import pytest
+
+from capstone.audit_data import audit_domain, build_parser, run
 from capstone.data.parser import ParseResult
 from capstone.data.paths import DomainPaths
 from capstone.types import Quadruple, ReviewRecord, SentenceRecord
@@ -59,3 +61,10 @@ def test_original_split_audit_uses_statuses_from_original_xml(tmp_path: Path, mo
         "legitimate_zero_opinion": 0,
         "unknown": 0,
     }
+
+
+def test_raw_audit_requires_a_domain_or_all_domains():
+    args = build_parser().parse_args([])
+
+    with pytest.raises(ValueError, match="--domain or --all-domains"):
+        run(args)

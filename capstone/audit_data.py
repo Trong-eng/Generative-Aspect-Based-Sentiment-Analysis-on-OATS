@@ -22,7 +22,7 @@ LOGGER = logging.getLogger("capstone.audit_data")
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--domain", choices=DOMAINS, default="hotels")
+    parser.add_argument("--domain", choices=DOMAINS, default=None)
     parser.add_argument("--all-domains", action="store_true")
     parser.add_argument(
         "--processed",
@@ -224,6 +224,8 @@ def run(args: argparse.Namespace) -> dict[str, object]:
 
     if args.all_domains and args.unannotated_manifest is not None:
         raise ValueError("--unannotated-manifest requires auditing one domain")
+    if not args.all_domains and args.domain is None:
+        raise ValueError("raw audit requires --domain or --all-domains")
     domains = list(DOMAINS) if args.all_domains else [args.domain]
     results = {
         domain: audit_domain(

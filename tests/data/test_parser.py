@@ -8,6 +8,7 @@ from capstone.data.parser import (
     parse_oats_xml,
     parse_original_split_file,
 )
+from capstone.data.paths import resolve_domain_paths
 
 
 XML = """<Reviews>
@@ -165,8 +166,6 @@ def test_original_split_alignment_rejects_unresolvable_duplicate_text(tmp_path: 
 
 
 def test_hotels_resolver_prefers_corrected_xml_when_present(tmp_path: Path):
-    from capstone.data.paths import resolve_domain_paths
-
     hotels_quads = tmp_path / "hotels" / "quads"
     hotels_quads.mkdir(parents=True)
     original = hotels_quads / "Hotels.xml"
@@ -177,3 +176,26 @@ def test_hotels_resolver_prefers_corrected_xml_when_present(tmp_path: Path):
     paths = resolve_domain_paths("hotels", tmp_path)
 
     assert paths.xml_path == corrected
+
+
+@pytest.mark.parametrize(
+    ("domain", "xml_filename"),
+    [
+        ("amazon_ff", "Amazon_FF.xml"),
+        ("coursera", "Coursera.xml"),
+        ("hotels", "Hotels.xml"),
+    ],
+)
+def test_domain_resolver_maps_all_supported_domains(domain, xml_filename, tmp_path: Path):
+    quads = tmp_path / domain / "quads"
+    quads.mkdir(parents=True)
+    expected_xml = quads / xml_filename
+    expected_xml.write_text("<Reviews />", encoding="utf-8")
+
+    paths = resolve_domain_paths(domain, tmp_path, prefer_corrected_hotels=False)
+
+    assert paths.domain == domain
+    assert paths.xml_path == expected_xml
+    assert paths.split_files == {
+        name: quads / f"{name}.txt" for name in ("train", "dev", "test")
+    }

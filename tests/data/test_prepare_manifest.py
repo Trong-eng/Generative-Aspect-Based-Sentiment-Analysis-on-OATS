@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from capstone.data.parser import ParseResult
 from capstone.data.paths import DomainPaths
 from capstone.prepare_data import build_parser, prepare_domain, run
@@ -13,6 +15,13 @@ def test_prepare_cli_accepts_config_and_optional_manifest():
 
     assert str(args.config) == "configs/gas_t5_hotels.yaml"
     assert str(args.unannotated_manifest) == "status.json"
+
+
+def test_prepare_cli_requires_an_explicit_domain_when_no_config_is_supplied():
+    args = build_parser().parse_args([])
+
+    with pytest.raises(ValueError, match="domain is required"):
+        run(args)
 
 
 def test_prepare_run_forwards_config_and_cli_manifest_override(tmp_path, monkeypatch):
@@ -139,8 +148,6 @@ def test_preparation_rejects_manifest_ids_missing_from_selected_xml(tmp_path, mo
         }),
         encoding="utf-8",
     )
-
-    import pytest
 
     with pytest.raises(ValueError, match="absent from the selected source dataset"):
         prepare_domain(

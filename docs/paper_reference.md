@@ -23,3 +23,5 @@ References:
 - Zhang et al., [Towards Generative Aspect-Based Sentiment Analysis](https://aclanthology.org/2021.acl-short.64/); official [Generative-ABSA code](https://github.com/IsakZhang/Generative-ABSA).
 
 The configs use T5-base, batch size 16, learning rate `3e-4`, 20 epochs, greedy decoding, and sequence length 128 where the source references support those settings. Gradient accumulation 1 and sequence length 128 are explicit project defaults, not verified OATS-paper settings. OATS-specific training values are not claimed as a reproduction of the paper. The project's default seed 42 is a single-run pipeline default; the paper table averages five different seeds.
+
+The repository ships six single-seed configs: GAS and Paraphrase for each of `amazon_ff`, `coursera`, and `hotels`. They form three same-domain model comparisons at seed 42. A paper-style five-seed study therefore requires 30 training runs and 30 evaluations. Aggregate mean and standard deviation separately for every `(domain, model)` pair; do not pool examples or scores across domains. Each seed must use its own review-level split, experiment name, processed-data root, and output directory.

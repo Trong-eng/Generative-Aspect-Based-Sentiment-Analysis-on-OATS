@@ -30,7 +30,7 @@ Phần **mã nguồn cốt lõi đã được viết**:
 - Lưu dấu vết dữ liệu đầu vào và từng tập dữ liệu để nhận biết khi nguồn hoặc nội dung thay đổi.
 - Tạo hai cách tổ chức đầu ra cho mô hình: GAS theo hướng trích xuất và Paraphrase-T5.
 - Viết luồng huấn luyện, dự đoán, đánh giá, phân tích lỗi và so sánh hai thí nghiệm.
-- Viết cấu hình mẫu, tài liệu hướng dẫn và bộ kiểm tra tự động cho các thành phần chính.
+- Viết đủ sáu cấu hình cho hai mô hình trên cả ba lĩnh vực, cùng tài liệu hướng dẫn và bộ kiểm tra tự động cho các thành phần chính.
 
 **Phần chưa làm:** chưa chạy bộ kiểm tra; chưa xử lý dữ liệu; chưa huấn luyện, dự đoán, đánh giá hay benchmark. Vì vậy hiện chưa có kết quả độ chính xác hoặc bằng chứng rằng toàn bộ pipeline chạy thành công trên máy. Những điều này được ghi là **UNVERIFIED — requires execution**.
 
@@ -38,7 +38,7 @@ GAS trong dự án là một cách triển khai theo hướng trích xuất cho 
 
 | Hạng mục | Trạng thái |
 |---|---|
-| Mã nguồn pipeline và cấu hình mẫu | Đã viết; chưa xác minh khi chạy |
+| Mã nguồn pipeline và ma trận 2 mô hình × 3 lĩnh vực | Đã viết; chưa xác minh khi chạy |
 | Tài liệu giải thích và hướng dẫn | Đã viết |
 | Bộ kiểm tra tự động | Đã viết; chưa chạy |
 | Chuẩn bị dữ liệu và kiểm tra chia tập | Chưa chạy |
@@ -50,25 +50,30 @@ GAS trong dự án là một cách triển khai theo hướng trích xuất cho 
 Các lệnh bên dưới được ghi để sử dụng về sau. Chúng **chưa được chạy** trong task này. Cần cài các gói được liệt kê trong `requirements.txt` và lấy dữ liệu theo hướng dẫn ở trên trước khi dùng.
 
 ```bash
-# 1. Kiểm tra dữ liệu Hotels
-python -m capstone.audit_data --domain hotels --raw-root OATS-ABSA-Dataset/data
+# 1. Kiểm tra toàn bộ dữ liệu gốc
+python -m capstone.audit_data --all-domains --sentiment-mode paper_compatible --raw-root OATS-ABSA-Dataset/data --output-dir artifacts/data_audit/raw
 
-# 2. Chuẩn bị các tập dữ liệu theo bài đánh giá
-python -m capstone.prepare_data --domain hotels --split-mode clean_split --seed 42 --sentiment-mode paper_compatible --raw-root OATS-ABSA-Dataset/data --output-root data/processed
+# 2. Chuẩn bị và kiểm tra ba lĩnh vực bằng cùng seed 42
+for domain in amazon_ff coursera hotels; do
+  python -m capstone.prepare_data --domain "$domain" --split-mode clean_split --seed 42 --sentiment-mode paper_compatible --raw-root OATS-ABSA-Dataset/data --output-root data/processed
+  python -m capstone.audit_data --processed "data/processed/$domain" --output-dir "artifacts/data_audit/processed/$domain"
+done
 
-# 3. Kiểm tra số lượng và việc tách tập
-python -m capstone.audit_data --processed data/processed/hotels
+# 3. Huấn luyện và đánh giá 2 mô hình × 3 lĩnh vực = 6 thí nghiệm
+for domain in amazon_ff coursera hotels; do
+  for model in gas paraphrase; do
+    python -m capstone.train --config "configs/${model}_t5_${domain}.yaml"
+    python -m capstone.evaluate --config "configs/${model}_t5_${domain}.yaml" --checkpoint "artifacts/experiments/${model}_t5_${domain}_seed42" --split test
+  done
+done
 
-# 4. Huấn luyện và đánh giá GAS
-python -m capstone.train --config configs/gas_t5_hotels.yaml
-python -m capstone.evaluate --config configs/gas_t5_hotels.yaml --checkpoint artifacts/experiments/gas_t5_hotels_seed42 --split test
-
-# 5. Huấn luyện và đánh giá Paraphrase
-python -m capstone.train --config configs/paraphrase_t5_hotels.yaml
-python -m capstone.evaluate --config configs/paraphrase_t5_hotels.yaml --checkpoint artifacts/experiments/paraphrase_t5_hotels_seed42 --split test
+# 4. So sánh hai mô hình riêng trong từng lĩnh vực
+for domain in amazon_ff coursera hotels; do
+  python -m capstone.compare --gas-experiment "artifacts/experiments/gas_t5_${domain}_seed42" --paraphrase-experiment "artifacts/experiments/paraphrase_t5_${domain}_seed42" --output-dir artifacts/comparisons/seed42
+done
 ```
 
-Hai cấu hình mẫu dùng Hotels để bắt đầu. Các hướng dẫn chi tiết hơn, gồm cách đọc đầu ra và phân tích lỗi, có trong [hướng dẫn chạy capstone](report/Trong_02_Capstone_Core_Execution_Guide.md).
+Repository có sáu cấu hình: GAS và Paraphrase cho `amazon_ff`, `coursera`, `hotels`. Một lượt seed 42 gồm sáu lần train và sáu lần evaluate; protocol năm seed tương ứng 30 lần train và 30 lần evaluate. Kết quả phải được báo cáo riêng theo domain và mô hình, không gộp điểm ba domain. Hướng dẫn đầy đủ, gồm phân tích lỗi, cấu trúc artifact và multi-seed, có trong [hướng dẫn chạy capstone](report/Trong_02_Capstone_Core_Execution_Guide.md).
 
 ## Cách dự án giữ kết quả đáng tin cậy hơn
 
@@ -86,7 +91,7 @@ Hai cấu hình mẫu dùng Hotels để bắt đầu. Các hướng dẫn chi t
 | `capstone/models/` | Định dạng đầu ra và đọc dự đoán của GAS/Paraphrase |
 | `capstone/training/` | Luồng huấn luyện |
 | `capstone/evaluation/` | Chuẩn hóa và tính điểm |
-| `configs/` | Cấu hình thí nghiệm mẫu |
+| `configs/` | Sáu cấu hình GAS/Paraphrase cho ba lĩnh vực |
 | `tests/` | Các kiểm tra tự động đã viết |
 | `docs/` | Ghi chú về bài báo và lựa chọn triển khai |
 | `report/` | Báo cáo triển khai và hướng dẫn sử dụng |

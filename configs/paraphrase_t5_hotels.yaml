@@ -6,6 +6,7 @@ experiment:
 
 model:
   type: paraphrase
+  target_format: natural_language_paraphrase
   model_name: t5-base
   tokenizer_name: t5-base
 

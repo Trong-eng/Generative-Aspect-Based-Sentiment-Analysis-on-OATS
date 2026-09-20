@@ -251,8 +251,12 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
     if manifest_value is not None and not remove_unannotated:
         raise ValueError("a manifest path requires cleaning.remove_unannotated_reviews=true")
 
+    domain = choose(args.domain, experiment.get("domain"), None)
+    if domain is None:
+        raise ValueError("domain is required: pass --domain or provide experiment.domain in --config")
+
     return prepare_domain(
-        choose(args.domain, experiment.get("domain"), "hotels"),
+        domain,
         split_mode=choose(args.split_mode, experiment.get("split_mode"), "clean_split"),
         seed=choose(args.seed, experiment.get("seed"), 42),
         sentiment_mode=choose(args.sentiment_mode, dataset.get("sentiment_mode"), "paper_compatible"),

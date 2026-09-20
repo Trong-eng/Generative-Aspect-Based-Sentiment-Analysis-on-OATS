@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from capstone.config import load_config, validate_config
 from capstone.models.base import resolve_checkpoint
 
@@ -96,3 +98,66 @@ def test_resolve_checkpoint_accepts_experiment_directory(tmp_path: Path):
     )
 
     assert resolve_checkpoint(experiment) == checkpoint
+
+
+def test_repository_ships_a_complete_unique_three_domain_config_matrix():
+    project_root = Path(__file__).resolve().parents[1]
+    domains = ("amazon_ff", "coursera", "hotels")
+    model_types = ("gas", "paraphrase")
+    expected_names = {
+        f"{model_type}_t5_{domain}.yaml"
+        for domain in domains
+        for model_type in model_types
+    }
+    config_paths = sorted((project_root / "configs").glob("*_t5_*.yaml"))
+
+    assert {path.name for path in config_paths} == expected_names
+
+    configs = {path.name: load_config(path) for path in config_paths}
+    experiment_names = set()
+    output_directories = set()
+    for domain in domains:
+        paired = []
+        for model_type in model_types:
+            filename = f"{model_type}_t5_{domain}.yaml"
+            config = configs[filename]
+            expected_experiment = f"{model_type}_t5_{domain}_seed42"
+            assert config["experiment"] == {
+                "name": expected_experiment,
+                "domain": domain,
+                "split_mode": "clean_split",
+                "seed": 42,
+            }
+            assert config["model"]["type"] == model_type
+            assert config["dataset"]["sentiment_mode"] == "paper_compatible"
+            assert Path(config["paths"]["processed_data"]).name == "processed"
+            assert Path(config["paths"]["output_dir]).name == expected_experiment
+            experiment_names.add(config["experiment"]["name"])
+            output_directories.add(config["paths"]["output_dir"])
+            paired.append(config)
+
+        for section in ("training", "sequence", "generation", "cleaning", "evaluation"):
+            assert paired[0][section] == paired[1][section]
+
+    assert len(experiment_names) == 6
+    assert len(output_directories) == 6
+
+
+@pytest.mark.parametrize("domain", ["amazon_ff", "coursera", "hotels"])
+def test_validate_config_accepts_every_supported_domain(domain):
+    config = {
+        "experiment": {"name": f"demo-{domain}", "domain": domain, "split_mode": "clean_split", "seed": 42},
+        "model": {"type": "gas", "model_name": "t5-base", "tokenizer_name": "t5-base"},
+        "dataset": {"version": "oats_xml_v1", "sentiment_mode": "paper_compatible"},
+        "training": {
+            "epochs": 1,
+            "batch_size": 1,
+            "gradient_accumulation_steps": 1,
+            "learning_rate": 0.001,
+        },
+        "sequence": {"max_input_length": 16, "max_output_length": 16},
+        "generation": {"num_beams": 1, "max_new_tokens": 8, "early_stopping": False},
+        "paths": {"raw_data": "raw", "processed_data": "processed", "output_dir": "output"},
+    }
+
+    assert validate_config(config) == []

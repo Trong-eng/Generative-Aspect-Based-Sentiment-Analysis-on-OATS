@@ -1,0 +1,53 @@
+experiment:
+  name: paraphrase_t5_coursera_seed42
+  domain: coursera
+  split_mode: clean_split
+  seed: 42
+
+model:
+  type: paraphrase
+  target_format: natural_language_paraphrase
+  model_name: t5-base
+  tokenizer_name: t5-base
+
+training:
+  epochs: 20
+  batch_size: 16
+  gradient_accumulation_steps: 1
+  learning_rate: 0.0003
+  weight_decay: 0.0
+  warmup_ratio: 0.0
+  optimizer: AdamW
+  scheduler: linear
+  max_grad_norm: 1.0
+
+sequence:
+  max_input_length: 128
+  max_output_length: 128
+
+generation:
+  num_beams: 1
+  max_new_tokens: 128
+  early_stopping: false
+
+dataset:
+  version: oats_xml_v1
+  sentiment_mode: paper_compatible
+
+cleaning:
+  version: review_level_clean_v1
+  remove_unannotated_reviews: false
+  unannotated_reviews_manifest: null
+  invalid_aspect_policy: drop_and_log
+  conflict_policy: preserve
+
+evaluation:
+  batch_size: 16
+
+logging:
+  level: INFO
+
+paths:
+  raw_data: OATS-ABSA-Dataset/data
+  processed_data: data/processed
+  output_dir: artifacts/experiments/paraphrase_t5_coursera_seed42
