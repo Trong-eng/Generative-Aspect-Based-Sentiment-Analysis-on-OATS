@@ -1,0 +1,4 @@
+[submodule "OATS-ABSA-Dataset"]
+	path = OATS-ABSA-Dataset
+	url = https://github.com/RiTUAL-MBZUAI/OATS-ABSA.git
+	ignore = untracked
