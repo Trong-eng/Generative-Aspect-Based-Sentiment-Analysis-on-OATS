@@ -149,7 +149,9 @@ Chạy ngày 2026-09-22 trên Windows 11, Node 24.15.0:
 
 Các test bao phủ: input rỗng/whitespace không gửi request; domain/model gửi đúng; loading và chống submit lặp; một và nhiều quadruple; `quadruples: []`; `NULL` hiển thị thân thiện; timeout/network/server error và retry; response malformed và exception lạ không làm crash hay lộ chi tiết nội bộ; response cũ không ghi đè response mới; cùng component render được từ mock service và HTTP service.
 
-Chưa kiểm tra thủ công trên trình duyệt thật và chưa chạy với backend thật.
+Kiểm tra thủ công trên Chrome (desktop, mock mode, `npm run dev`): validation whitespace; loading + nút bị disable; nhiều quadruple (GAS-T5 · Hotels); `NULL` hiển thị “Implicit / Không nêu rõ (NULL)”; empty state (`#empty`); lỗi `MODEL_NOT_READY` + nút Try again (`#error`); diagnostics mở/đóng được; không có lỗi console.
+
+Chưa kiểm tra thủ công layout mobile và chưa chạy với backend thật.
 
 ## Giới hạn hiện tại
 
