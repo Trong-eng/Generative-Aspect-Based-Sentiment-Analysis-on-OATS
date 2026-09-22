@@ -33,12 +33,12 @@ function controllableService() {
       calls.push({ request, signal: options.signal, resolve, reject });
     });
   });
-  const service: PredictionService = { mode: "api", predict };
+  const service: PredictionService = { mode: "api", predict, predictBatch: vi.fn() };
   return { service, predict, calls };
 }
 
 function staticService(result: (request: PredictRequest) => PredictResponse | Promise<PredictResponse>): PredictionService {
-  return { mode: "api", predict: vi.fn(async (request: PredictRequest) => result(request)) };
+  return { mode: "api", predict: vi.fn(async (request: PredictRequest) => result(request)), predictBatch: vi.fn() };
 }
 
 async function analyze(text: string, options: { domain?: string; model?: string } = {}) {
@@ -49,13 +49,18 @@ async function analyze(text: string, options: { domain?: string; model?: string 
     await user.type(input, text);
   }
   if (options.domain) {
-    await user.selectOptions(screen.getByLabelText("Domain"), options.domain);
+    await user.selectOptions(panel().getByLabelText("Domain"), options.domain);
   }
   if (options.model) {
-    await user.selectOptions(screen.getByLabelText("Model"), options.model);
+    await user.selectOptions(panel().getByLabelText("Model"), options.model);
   }
   await user.click(screen.getByRole("button", { name: "Analyze" }));
   return user;
+}
+
+/** The single-review tab; the hidden batch tab has its own Domain/Model fields. */
+function panel() {
+  return within(screen.getByRole("tabpanel", { name: "Single review" }));
 }
 
 function cards() {
@@ -65,8 +70,8 @@ function cards() {
 describe("App", () => {
   it("offers exactly three domains and two models with labelled controls", () => {
     render(<App service={createMockPredictionService({ delayMs: 0 })} />);
-    const domainOptions = within(screen.getByLabelText("Domain")).getAllByRole("option");
-    const modelOptions = within(screen.getByLabelText("Model")).getAllByRole("option");
+    const domainOptions = within(panel().getByLabelText("Domain")).getAllByRole("option");
+    const modelOptions = within(panel().getByLabelText("Model")).getAllByRole("option");
     expect(domainOptions.map((option) => option.textContent)).toEqual(["Amazon_FF", "Coursera", "Hotels"]);
     expect(domainOptions.map((option) => (option as HTMLOptionElement).value)).toEqual(["amazon_ff", "coursera", "hotels"]);
     expect(modelOptions.map((option) => option.textContent)).toEqual(["GAS-T5", "Paraphrase-T5"]);
@@ -219,6 +224,7 @@ describe("App", () => {
       predict: vi.fn(async () => {
         throw new Error("KeyError at /srv/app/model.py line 42");
       }),
+      predictBatch: vi.fn(),
     };
     render(<App service={service} />);
 

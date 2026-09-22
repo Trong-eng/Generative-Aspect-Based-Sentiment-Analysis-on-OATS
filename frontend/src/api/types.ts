@@ -44,6 +44,28 @@ export interface PredictResponse {
   invalid_predictions?: InvalidPrediction[];
 }
 
+/** One text to analyze in a batch; `id` is chosen by the client and echoed back. */
+export interface BatchItem {
+  id: string;
+  text: string;
+}
+
+export interface BatchPredictRequest {
+  domain: Domain;
+  model_type: ModelType;
+  items: BatchItem[];
+}
+
+export interface BatchResult {
+  id: string;
+  quadruples: Quadruple[];
+  invalid_predictions?: InvalidPrediction[];
+}
+
+export interface BatchPredictResponse {
+  results: BatchResult[];
+}
+
 export type PredictionErrorKind = "timeout" | "network" | "server" | "malformed" | "aborted";
 
 /** The only error type services throw, so the UI never sees raw exceptions or stack traces. */

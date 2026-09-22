@@ -14,6 +14,7 @@ function controllableService() {
       (_request: PredictRequest, options: PredictOptions = {}) =>
         new Promise<PredictResponse>((resolve) => calls.push({ signal: options.signal, resolve })),
     ),
+    predictBatch: vi.fn(),
   };
   return { service, calls };
 }

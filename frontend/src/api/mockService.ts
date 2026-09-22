@@ -1,6 +1,13 @@
 import { MOCK_FIXTURES, MOCK_TRIGGERS } from "./fixtures";
+import { mockExtract } from "./mockLexicon";
 import type { PredictOptions, PredictionService } from "./service";
-import { PredictionError, type PredictRequest, type PredictResponse } from "./types";
+import {
+  PredictionError,
+  type BatchPredictRequest,
+  type BatchPredictResponse,
+  type PredictRequest,
+  type PredictResponse,
+} from "./types";
 
 export interface MockServiceOptions {
   delayMs: number;
@@ -24,16 +31,20 @@ function wait(delayMs: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-/** In-browser stand-in for `POST /predict` that returns the same response type as the HTTP service. */
+function modelNotReady(): PredictionError {
+  return new PredictionError("server", "Checkpoint cho domain/model này chưa sẵn sàng.", {
+    code: "MODEL_NOT_READY",
+    status: 503,
+  });
+}
+
+/** In-browser stand-in for the prediction API that returns the same response types as the HTTP service. */
 export function createMockPredictionService(options: MockServiceOptions): PredictionService {
   async function predict(request: PredictRequest, { signal }: PredictOptions = {}): Promise<PredictResponse> {
     await wait(options.delayMs, signal);
     const lowered = request.text.toLowerCase();
     if (lowered.includes(MOCK_TRIGGERS.error)) {
-      throw new PredictionError("server", "Checkpoint cho domain/model này chưa sẵn sàng.", {
-        code: "MODEL_NOT_READY",
-        status: 503,
-      });
+      throw modelNotReady();
     }
     const fixture = MOCK_FIXTURES[request.domain][request.model_type];
     return {
@@ -46,5 +57,26 @@ export function createMockPredictionService(options: MockServiceOptions): Predic
     };
   }
 
-  return { mode: "mock", predict };
+  /**
+   * Batch mock: keyword rules over each text (see mockLexicon.ts), so the dashboard reflects
+   * the uploaded reviews. The model type is echoed only; both models share the same rules.
+   */
+  async function predictBatch(
+    request: BatchPredictRequest,
+    { signal }: PredictOptions = {},
+  ): Promise<BatchPredictResponse> {
+    await wait(Math.min(options.delayMs, 150), signal);
+    if (request.items.some((item) => item.text.toLowerCase().includes(MOCK_TRIGGERS.error))) {
+      throw modelNotReady();
+    }
+    return {
+      results: request.items.map((item) => ({
+        id: item.id,
+        quadruples: mockExtract(item.text, request.domain),
+        invalid_predictions: [],
+      })),
+    };
+  }
+
+  return { mode: "mock", predict, predictBatch };
 }
