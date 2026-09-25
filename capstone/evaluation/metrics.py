@@ -458,20 +458,18 @@ def evaluate_records(
                 implicit_target_failures.append(mismatch)
             if mismatch.get("implicit_opinion_failure"):
                 implicit_opinion_failures.append(mismatch)
-        implicit_target_mismatch_gold = Counter(
+        paired_mismatch_gold = Counter(
             tuple(mismatch["gold"][field] for field in _COMPONENTS)
             for mismatch in mismatches
-            if mismatch.get("implicit_target_failure")
         )
-        implicit_target_mismatch_predicted = Counter(
+        paired_mismatch_predicted = Counter(
             tuple(mismatch["predicted"][field] for field in _COMPONENTS)
             for mismatch in mismatches
-            if mismatch.get("implicit_target_failure")
         )
         for item in false_negatives:
             key = _quadruple_key(item)
-            if implicit_target_mismatch_gold[key]:
-                implicit_target_mismatch_gold[key] -= 1
+            if paired_mismatch_gold[key]:
+                paired_mismatch_gold[key] -= 1
             elif _is_implicit(item.target):
                 implicit_target_failures.append(
                     {"gold": _quadruple_dict(item), "predicted": None, "reason": "missed_implicit"}
@@ -482,8 +480,8 @@ def evaluate_records(
                 )
         for item in false_positives:
             key = _quadruple_key(item)
-            if implicit_target_mismatch_predicted[key]:
-                implicit_target_mismatch_predicted[key] -= 1
+            if paired_mismatch_predicted[key]:
+                paired_mismatch_predicted[key] -= 1
             elif _is_implicit(item.target):
                 implicit_target_failures.append(
                     {"gold": None, "predicted": _quadruple_dict(item), "reason": "spurious_implicit"}

@@ -104,6 +104,20 @@ def test_implicit_target_failures_include_unpaired_misses_and_spurious_predictio
     ]
 
 
+def test_paired_aspect_mismatch_with_two_implicit_targets_is_not_an_implicit_target_failure():
+    gold = q("", "FOOD#QUALITY", "tasty", "positive")
+    predicted = q("", "SERVICE#GENERAL", "tasty", "positive")
+
+    metrics, _, errors = evaluate_records(
+        [{"gold_quadruples": [gold], "predicted_quadruples": [predicted]}]
+    )
+
+    assert (metrics["tp"], metrics["fp"], metrics["fn"]) == (0, 1, 1)
+    assert errors[0]["wrong_field_mismatches"][0]["wrong_fields"] == ["aspect"]
+    assert errors[0]["implicit_target_failures"] == []
+    assert "implicit_target_failure" not in errors[0]["error_types"]
+
+
 @pytest.mark.parametrize(
     ("gold", "predicted", "unpaired_reason"),
     [
