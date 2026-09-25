@@ -209,11 +209,11 @@ def _record_issue_case(
     raw_generation: Any,
     invalid_predictions: Any = _MISSING,
 ) -> dict[str, Any]:
-    result: dict[str, Any] = {
-        "review_id": _json_safe(_get(record, "review_id", None)),
-        "sentence_id": _json_safe(_get(record, "sentence_id", None)),
-        "issues": [_issue_dict(issue) for issue in issues],
-    }
+    result: dict[str, Any] = {"issues": [_issue_dict(issue) for issue in issues]}
+    for field in ("review_id", "sentence_id", "source_line_number"):
+        value = _get(record, field, _MISSING)
+        if value is not _MISSING and value is not None:
+            result[field] = _json_safe(value)
     text = _get(record, "text", _MISSING)
     if text is not _MISSING:
         result["text"] = _json_safe(text)

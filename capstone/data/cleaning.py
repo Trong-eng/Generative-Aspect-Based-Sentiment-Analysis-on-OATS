@@ -21,6 +21,12 @@ class CleaningResult:
     annotation_status_by_review_id: dict[str, str] = field(default_factory=dict)
 
 
+@dataclass
+class SplitRowsCleaningResult:
+    rows: list[SentenceRecord]
+    issues: list[DataIssue] = field(default_factory=list)
+
+
 def _invalid_aspect(aspect: str) -> bool:
     normalized = " ".join(aspect.replace("#", " ").replace("_", " ").split()).casefold()
     return normalized == "polarity" or normalized.startswith("polarity ")
@@ -31,6 +37,95 @@ def _with_sentiment_mode(quadruple: Quadruple, sentiment_mode: str) -> Quadruple
         raise ValueError("sentiment_mode must be 'raw_4_class' or 'paper_compatible'")
     # Preserve conflict until an official ASQP source establishes a conversion.
     return quadruple
+
+
+def _clean_sentence(
+    sentence: SentenceRecord,
+    *,
+    sentiment_mode: str,
+    issues: list[DataIssue],
+    review_id: str | None,
+    source_path: str | None = None,
+) -> SentenceRecord:
+    cleaned_quads: list[Quadruple] = []
+    for quadruple in sentence.quadruples:
+        if _invalid_aspect(quadruple.aspect):
+            issues.append(
+                DataIssue(
+                    "invalid_aspect_category",
+                    review_id,
+                    sentence.sentence_id,
+                    quadruple.to_dict(),
+                    "aspect category uses the invalid POLARITY#* namespace",
+                    source_path,
+                    sentence.source_line_number,
+                )
+            )
+            continue
+        if quadruple.sentiment not in VALID_SENTIMENTS:
+            issues.append(
+                DataIssue(
+                    "invalid_sentiment",
+                    review_id,
+                    sentence.sentence_id,
+                    quadruple.to_dict(),
+                    f"unsupported sentiment {quadruple.sentiment!r}",
+                    source_path,
+                    sentence.source_line_number,
+                )
+            )
+            continue
+        normalized = normalize_quadruple(quadruple)
+        if normalized is None:
+            issues.append(
+                DataIssue(
+                    "malformed_quadruple",
+                    review_id,
+                    sentence.sentence_id,
+                    quadruple.to_dict(),
+                    "quadruple fields could not be normalized",
+                    source_path,
+                    sentence.source_line_number,
+                )
+            )
+            continue
+        cleaned_quads.append(_with_sentiment_mode(normalized, sentiment_mode))
+    return SentenceRecord(
+        review_id=review_id,
+        sentence_id=sentence.sentence_id,
+        text=sentence.text,
+        quadruples=cleaned_quads,
+        source_line_number=sentence.source_line_number,
+    )
+
+
+def clean_split_rows(
+    rows: Iterable[SentenceRecord],
+    *,
+    sentiment_mode: str = "raw_4_class",
+    source_path: str | None = None,
+) -> SplitRowsCleaningResult:
+    """Apply the standard quadruple filters to independent TXT source rows."""
+    if sentiment_mode not in {"raw_4_class", "paper_compatible"}:
+        raise ValueError("sentiment_mode must be 'raw_4_class' or 'paper_compatible'")
+    row_list = list(rows)
+    issues: list[DataIssue] = []
+    cleaned_rows: list[SentenceRecord] = []
+    for row in row_list:
+        if row.review_id is not None or row.sentence_id is not None:
+            raise ValueError("provided split rows must not have review_id or sentence_id")
+        if row.source_line_number is None:
+            raise ValueError("provided split rows require source_line_number")
+        cleaned_rows.append(
+            _clean_sentence(
+                row,
+                sentiment_mode=sentiment_mode,
+                issues=issues,
+                review_id=None,
+                source_path=source_path,
+            )
+        )
+    return SplitRowsCleaningResult(cleaned_rows, issues)
 
 
 def clean_dataset(
@@ -74,52 +169,15 @@ def clean_dataset(
         cleaned_quadruple_count = 0
         raw_quadruple_count = sum(len(sentence.quadruples) for sentence in review.sentences)
         for sentence in review.sentences:
-            cleaned_quads: list[Quadruple] = []
-            for quadruple in sentence.quadruples:
-                if _invalid_aspect(quadruple.aspect):
-                    issues.append(
-                        DataIssue(
-                            "invalid_aspect_category",
-                            review.review_id,
-                            sentence.sentence_id,
-                            quadruple.to_dict(),
-                            "aspect category uses the invalid POLARITY#* namespace",
-                        )
-                    )
-                    continue
-                if quadruple.sentiment not in VALID_SENTIMENTS:
-                    issues.append(
-                        DataIssue(
-                            "invalid_sentiment",
-                            review.review_id,
-                            sentence.sentence_id,
-                            quadruple.to_dict(),
-                            f"unsupported sentiment {quadruple.sentiment!r}",
-                        )
-                    )
-                    continue
-                normalized = normalize_quadruple(quadruple)
-                if normalized is None:
-                    issues.append(
-                        DataIssue(
-                            "malformed_quadruple",
-                            review.review_id,
-                            sentence.sentence_id,
-                            quadruple.to_dict(),
-                            "quadruple fields could not be normalized",
-                        )
-                    )
-                    continue
-                cleaned_quads.append(_with_sentiment_mode(normalized, sentiment_mode))
-            cleaned_quadruple_count += len(cleaned_quads)
-            cleaned_sentences.append(
-                SentenceRecord(
-                    review_id=review.review_id,
-                    sentence_id=sentence.sentence_id,
-                    text=sentence.text,
-                    quadruples=cleaned_quads,
-                )
+            cleaned_sentence = _clean_sentence(
+                sentence,
+                sentiment_mode=sentiment_mode,
+                issues=issues,
+                review_id=review.review_id,
             )
+            cleaned_quads = cleaned_sentence.quadruples
+            cleaned_quadruple_count += len(cleaned_quads)
+            cleaned_sentences.append(cleaned_sentence)
 
         explicitly_zero_label = (
             review.review_id in confirmed_ids or review.review_id in legitimate_ids

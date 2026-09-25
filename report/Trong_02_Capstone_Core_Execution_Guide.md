@@ -1,15 +1,15 @@
 # Trọng — Capstone Core Execution Guide
 
-> Pipeline được thiết kế cho đủ ba domain OATS: `amazon_ff`, `coursera`, `hotels`, với hai mô hình GAS và Paraphrase.
+> Hướng dẫn này mô tả lượt seed 42 đã được phê duyệt: dùng trực tiếp các split TXT có sẵn của ba domain OATS (`amazon_ff`, `coursera`, `hotels`) cho GAS và Paraphrase. Không đọc XML và không chia lại dữ liệu.
 
-**Mọi command trong tài liệu này chỉ được viết để chạy sau trên máy có GPU. Chưa command nào được thực thi trong task implementation. `UNVERIFIED — requires execution`.**
+Các kết quả thực tế, bao gồm trạng thái preflight và pipeline, phải được ghi trong [báo cáo Thanh_03](Thanh_03_Seed42_Execution_Report.md). Tài liệu này là runbook; không được xem các ví dụ lệnh hay số trong paper là kết quả đã chạy.
 
 ## Phạm vi lượt chạy
 
 Một lượt đầy đủ với seed 42 gồm:
 
 - 1 raw audit bao phủ cả ba domain;
-- 3 lần chuẩn bị dữ liệu và 3 processed audit;
+- 3 lần chuẩn bị trực tiếp từ split TXT và 3 processed audit;
 - 6 lần train: 2 mô hình × 3 domain;
 - 6 lần evaluate trên test split;
 - 3 comparison cùng domain;
@@ -21,8 +21,8 @@ Không gộp dữ liệu hoặc điểm số giữa các domain. Mỗi compariso
 
 ```text
 Kiểm tra môi trường
-  → audit raw cả 3 domain
-  → prepare + audit processed từng domain
+  → audit các split TXT có sẵn của cả 3 domain
+  → prepare trực tiếp từ TXT + audit processed từng domain
   → train + evaluate 6 experiment
   → compare 3 cặp cùng domain
   → error analysis 6 experiment
@@ -33,7 +33,7 @@ Chạy từ repository root. Nếu một bước báo metadata, fingerprint, inv
 
 ## Step 0 — Chuẩn bị môi trường
 
-Lấy Git submodule và cài dependencies trong môi trường của người chạy:
+Lấy Git submodule và cài dependencies trong môi trường của người chạy (nếu chưa chuẩn bị):
 
 ```bash
 git submodule update --init --recursive
@@ -49,13 +49,14 @@ Kiểm tra test suite trước khi dùng GPU:
 python -m pytest
 ```
 
-Các lệnh cài đặt và test trên chưa được chạy trong task này.
+Trên Windows, dùng đúng Python thuộc môi trường `oats-seed42`. Khi thư mục tạm mặc định của pytest không có quyền ghi, đặt `--basetemp` tới một thư mục mới có thể ghi được. Chỉ tiếp tục pipeline khi toàn bộ preflight pass.
 
 ## Step 1 — Audit dữ liệu gốc của cả ba domain
 
 ```bash
 python -m capstone.audit_data \
   --all-domains \
+  --source-mode provided_split \
   --sentiment-mode paper_compatible \
   --raw-root OATS-ABSA-Dataset/data \
   --output-dir artifacts/data_audit/raw
@@ -71,15 +72,15 @@ artifacts/data_audit/raw/
 └── summary.json
 ```
 
-Đọc review/sentence/quad counts, empty-label sentences, implicit elements, aspect/sentiment distributions, invalid annotations và suspicious spans cho từng domain. Hotels clean mode ưu tiên `Hotels_corr.xml` khi có. Không điền số liệu vào báo cáo trước khi audit thật hoàn tất.
+Audit đọc từng dòng của các file `train.txt`, `dev.txt`, `test.txt`, tính SHA-256 và thống kê số dòng, quadruple, nhãn rỗng, implicit elements, phân phối aspect/sentiment và annotation issues. Không có thống kê review/XML hoặc suspicious spans trong chế độ này. Không điền số liệu vào báo cáo trước khi audit thật hoàn tất.
 
-## Step 2 — Chuẩn bị clean split cho cả ba domain
+## Step 2 — Chuẩn bị từ split TXT có sẵn cho cả ba domain
 
 ```bash
 for domain in amazon_ff coursera hotels; do
   python -m capstone.prepare_data \
     --domain "$domain" \
-    --split-mode clean_split \
+    --split-mode provided_split \
     --seed 42 \
     --sentiment-mode paper_compatible \
     --raw-root OATS-ABSA-Dataset/data \
@@ -97,9 +98,9 @@ data/processed/<domain>/
 └── metadata.json
 ```
 
-Clean split chia ở review level 80/10/10 để các câu trong cùng review không sang nhiều split. Review chưa có bằng chứng là lỗi được giữ với trạng thái `unknown`. Nếu cần loại review đã xác nhận chưa annotate, tạo manifest có provenance riêng cho domain, dùng `--unannotated-manifest`, và cập nhật config cùng cleaning policy trước khi train.
+Ở chế độ này, mỗi dòng TXT không rỗng là một mẫu độc lập; dòng trống bị bỏ qua nhưng số thứ tự dòng vật lý vẫn được giữ trong `source_line_number`. Các dòng có text trùng nhưng nhãn khác và các mẫu không còn quadruple sau cleaning vẫn được giữ. Quadruple có aspect không hợp lệ tiếp tục bị loại và ghi issue theo cleaning policy hiện có. Không ghép TXT với XML, không tạo `review_id`/`sentence_id`, và không chia lại dữ liệu. `seed: 42` trong config điều khiển tính ngẫu nhiên của thí nghiệm, không dùng để phân chia dữ liệu.
 
-`metadata.json` phải giữ domain, seed, split mode, sentiment mode, cleaning policy, aspect inventory, source/split SHA-256, review IDs, zero-label statuses và issue list.
+`metadata.json` phải giữ domain, split mode, sentiment mode, cleaning policy, aspect inventory, source paths/fingerprints, fingerprint từng split, số mẫu và issue list. Vì các TXT không chứa review ID, metadata phải ghi `review_level_leakage_check.status: not_verifiable` cùng xác nhận của người dùng rằng có thể tin cậy split có sẵn. Không ghi rằng leakage cấp review đã được kiểm tra.
 
 ## Step 3 — Audit từng processed dataset
 
@@ -121,7 +122,7 @@ artifacts/data_audit/processed/<domain>/
 └── summary.json
 ```
 
-Trước khi train, xác nhận `review_overlap` rỗng, `no_review_leakage: true`, domain/seed/split khớp config và cả ba JSONL có fingerprint trong metadata.
+Trước khi train, xác nhận domain, `provided_split`, dataset/cleaning version, sentiment mode, số dòng và fingerprints khớp giữa raw audit, source TXT, metadata và ba JSONL. Xác nhận `review_level_leakage_check.status` là `not_verifiable`; không dùng `review_overlap` hay `no_review_leakage: true` làm điều kiện vì dữ liệu không có review IDs. Nếu fingerprints hoặc metadata không khớp, dừng trước training.
 
 ## Step 4 — Train GAS trên ba domain
 
@@ -231,7 +232,7 @@ for domain in amazon_ff coursera hotels; do
 done
 ```
 
-Error analysis giữ IDs, text, raw generation, TP/FP/FN, field mismatch, missing/extra quadruple, implicit failures và parser errors.
+Error analysis giữ `source_line_number`, text, raw generation, TP/FP/FN, field mismatch, missing/extra quadruple, implicit failures và parser errors; không tạo review/sentence ID.
 
 ## Step 10 — Inference tùy chọn
 
@@ -259,7 +260,7 @@ Inference trên câu riêng không được cộng vào test metrics.
 | Input/output length | 128 / 128 | 128 / 128 |
 | Beams / max new tokens | 1 / 128 | 1 / 128 |
 | Seed | 42 | 42 |
-| Split | `clean_split` | `clean_split` |
+| Split | `provided_split` | `provided_split` |
 | Sentiment | `paper_compatible`, giữ conflict | `paper_compatible`, giữ conflict |
 | Domains | Amazon_FF, Coursera, Hotels | Amazon_FF, Coursera, Hotels |
 
@@ -276,16 +277,16 @@ Các giá trị trên là config của repository. OATS paper không công bố 
 
 Paper báo cáo trung bình năm seed. Với 3 domain × 2 model × 5 seed, kế hoạch đầy đủ là **30 lần train và 30 lần evaluate**. Seed 42 trong sáu config hiện tại chỉ là lượt chạy đầu tiên.
 
-Với mỗi seed bổ sung, tạo sáu config mới hoặc bản sinh ra từ template với:
+Nếu nhóm sau này phê duyệt thêm seed cho cùng protocol TXT, tạo sáu config mới hoặc bản sinh ra từ template với:
 
 - `experiment.seed` và `experiment.name` riêng;
 - `paths.processed_data` trỏ tới root riêng, ví dụ `data/processed/seed43`;
 - `paths.output_dir` riêng, có seed trong tên;
-- prepare lại cả ba clean split bằng đúng seed và output root đó;
+- dùng nguyên các split TXT nguồn cho cả sáu config; seed mới không chia lại dữ liệu;
 - compare GAS/Paraphrase trong cùng domain và cùng seed;
 - tính mean/std riêng cho từng `(domain, model)` sau khi đủ năm seed.
 
-`original_split` dùng TXT gốc để điều tra gần protocol paper. `clean_split` là protocol chính của project để giữ review grouping. Không đặt F1 của hai protocol vào cùng một cột hoặc diễn giải chênh lệch như lỗi reproduction.
+`provided_split` là protocol của lượt chạy này và đọc trực tiếp TXT. `clean_split` vẫn là một luồng chuẩn bị khác của codebase, nhưng không tương thích với sáu config hiện tại; không dùng nó cho lượt seed 42 này. Khi báo cáo các protocol khác nhau, không đặt F1 của chúng vào cùng một cột hoặc diễn giải chênh lệch như lỗi reproduction.
 
 Paper reference ASQP F1:
 
@@ -299,9 +300,9 @@ Paper reference ASQP F1:
 ## Checklist hoàn tất seed 42
 
 ```text
-[ ] 3 raw audit JSON + summary
+[ ] 3 TXT-source audit JSON + summary
 [ ] 3 processed dataset, mỗi dataset có train/dev/test/metadata
-[ ] 3 processed audit, no_review_leakage = true
+[ ] 3 processed audit; fingerprints/metadata hợp lệ và review-level leakage ghi not_verifiable
 [ ] 6 experiment directories có best_checkpoint.json
 [ ] 6 evaluation directories có metrics và predictions
 [ ] 3 comparison JSON đúng domain
@@ -311,7 +312,7 @@ Paper reference ASQP F1:
 
 ## Trạng thái kiểm chứng
 
-- `UNVERIFIED — requires execution`: test suite và dependency/runtime compatibility.
-- `UNVERIFIED — requires execution`: raw audit, preparation, fingerprints và review leakage trên cả ba domain.
+- Trạng thái test suite và dependency/runtime compatibility: ghi theo preflight thực tế trong báo cáo Thanh_03.
+- Cần audit TXT, preparation và fingerprints cho cả ba domain; review-level leakage không thể kiểm tra bằng nguồn TXT này.
 - `UNVERIFIED — requires execution`: sáu training/evaluation runs, checkpoint selection và GPU memory.
 - `UNVERIFIED — requires execution`: metrics, comparisons, error analysis, inference và mọi số liệu kết quả.

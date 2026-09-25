@@ -1,4 +1,4 @@
-"""Prepare review-linked OATS sentence records for the ASQP pipeline."""
+"""Prepare OATS sentence records from supplied TXT splits or review-linked XML."""
 
 from __future__ import annotations
 
@@ -8,15 +8,21 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Sequence
 
-from capstone.data.audit import audit_reviews
-from capstone.data.cleaning import clean_dataset
+from capstone.data.audit import audit_reviews, audit_sentence_rows
+from capstone.data.cleaning import clean_dataset, clean_split_rows
 from capstone.data.inventory import collect_aspect_inventory
 from capstone.data.manifest import load_unannotated_review_manifest
-from capstone.data.parser import DataIssue, load_original_splits, parse_oats_xml
+from capstone.data.parser import (
+    DataIssue,
+    load_original_splits,
+    parse_oats_xml,
+    parse_original_split_file,
+)
 from capstone.data.paths import DOMAINS, resolve_domain_paths
 from capstone.data.serialization import sha256_file, write_prepared_splits
 from capstone.data.splitting import assert_no_review_leakage, split_reviews
 from capstone.config import load_config
+from capstone.types import SentenceRecord
 
 
 DATASET_VERSION = "oats_xml_v1"
@@ -30,8 +36,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--domain", choices=DOMAINS, default=None)
     parser.add_argument(
         "--split-mode",
-        choices=("original_split", "clean_split"),
+        choices=("original_split", "clean_split", "provided_split"),
         default=None,
+        help="provided_split reads train/dev/test TXT directly; other modes use XML-linked source data",
     )
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument(
@@ -69,21 +76,56 @@ def prepare_domain(
     output_root: Path = Path("data/processed"),
     unannotated_manifest_path: Path | None = None,
 ) -> dict[str, Path]:
-    if split_mode not in {"original_split", "clean_split"}:
-        raise ValueError("split_mode must be 'original_split' or 'clean_split'")
+    if split_mode not in {"original_split", "clean_split", "provided_split"}:
+        raise ValueError("split_mode must be 'original_split', 'clean_split', or 'provided_split'")
+    if split_mode == "provided_split" and unannotated_manifest_path is not None:
+        raise ValueError("provided_split cannot apply a review-level annotation manifest")
     paths = resolve_domain_paths(
         domain,
         raw_root,
         prefer_corrected_hotels=(split_mode == "clean_split"),
     )
-    parsed = parse_oats_xml(paths.xml_path)
-    manifest = (
-        load_unannotated_review_manifest(unannotated_manifest_path, expected_domain=domain)
-        if unannotated_manifest_path is not None
-        else None
-    )
-    if manifest is not None:
-        manifest.validate_source_review_ids(review.review_id for review in parsed.reviews)
+    if split_mode == "provided_split":
+        manifest = None
+        splits: dict[str, list[SentenceRecord]] = {}
+        issues: list[DataIssue] = []
+        for split_name, split_path in paths.split_files.items():
+            source_rows = parse_original_split_file(split_path)
+            rows = [
+                SentenceRecord(
+                    review_id=None,
+                    sentence_id=None,
+                    text=row.text,
+                    quadruples=row.quadruples,
+                    source_line_number=row.line_number,
+                )
+                for row in source_rows
+            ]
+            cleaned_rows = clean_split_rows(
+                rows,
+                sentiment_mode=sentiment_mode,
+                source_path=str(split_path.resolve()),
+            )
+            splits[split_name] = cleaned_rows.rows
+            issues.extend(cleaned_rows.issues)
+        split_stats = {
+            split_name: audit_sentence_rows(rows, split=split_name)
+            for split_name, rows in splits.items()
+        }
+        all_retained_reviews: list = []
+        all_retained_rows = [row for rows in splits.values() for row in rows]
+        annotation_status_by_review_id: dict[str, str] = {}
+        excluded_reviews: list[dict[str, str]] = []
+    else:
+        parsed = parse_oats_xml(paths.xml_path)
+        manifest = (
+            load_unannotated_review_manifest(unannotated_manifest_path, expected_domain=domain)
+            if unannotated_manifest_path is not None
+            else None
+        )
+        if manifest is not None:
+            manifest.validate_source_review_ids(review.review_id for review in parsed.reviews)
+        all_retained_rows = []
     confirmed_ids = manifest.confirmed_review_ids if manifest else frozenset()
     legitimate_ids = manifest.legitimate_zero_opinion_review_ids if manifest else frozenset()
     manifest_args: dict[str, Any] = {
@@ -94,7 +136,9 @@ def prepare_domain(
         "manifest_sha256": manifest.sha256 if manifest else None,
     }
 
-    if split_mode == "clean_split":
+    if split_mode == "provided_split":
+        pass
+    elif split_mode == "clean_split":
         cleaned = clean_dataset(
             parsed.reviews,
             sentiment_mode=sentiment_mode,
@@ -137,25 +181,36 @@ def prepare_domain(
             excluded_reviews.extend(cleaned_split.excluded_reviews)
             issues.extend(cleaned_split.issues[len(relevant_source_issues) :])
 
-    split_stats = {
-        split_name: audit_reviews(
-            reviews,
-            split=split_name,
-            review_status_by_id={
-                review_id: annotation_status_by_review_id[review_id]
-                for review_id in {review.review_id for review in reviews}
-                if review_id in annotation_status_by_review_id
-            },
-        )
-        for split_name, reviews in splits.items()
-    }
+    if split_mode != "provided_split":
+        split_stats = {
+            split_name: audit_reviews(
+                reviews,
+                split=split_name,
+                review_status_by_id={
+                    review_id: annotation_status_by_review_id[review_id]
+                    for review_id in {review.review_id for review in reviews}
+                    if review_id in annotation_status_by_review_id
+                },
+            )
+            for split_name, reviews in splits.items()
+        }
     zero_statuses = ("confirmed_unannotated", "legitimate_zero_opinion", "unknown")
     zero_status_counts = {
         status: sum(value == status for value in annotation_status_by_review_id.values())
         for status in zero_statuses
     }
-    source_paths = {"raw_xml": str(paths.xml_path)}
-    source_fingerprints = {"raw_xml": sha256_file(paths.xml_path)}
+    if split_mode == "provided_split":
+        source_paths = {
+            f"provided_{split_name}_txt": str(split_path.resolve())
+            for split_name, split_path in paths.split_files.items()
+        }
+        source_fingerprints = {
+            name: sha256_file(path)
+            for name, path in source_paths.items()
+        }
+    else:
+        source_paths = {"raw_xml": str(paths.xml_path)}
+        source_fingerprints = {"raw_xml": sha256_file(paths.xml_path)}
     if split_mode == "original_split":
         for split_name, split_path in paths.split_files.items():
             fingerprint_name = f"original_{split_name}_txt"
@@ -174,45 +229,61 @@ def prepare_domain(
         if manifest is not None
         else None
     )
+    dataset_version = "oats_provided_txt_v1" if split_mode == "provided_split" else DATASET_VERSION
+    aspect_inventory = (
+        sorted({quadruple.aspect for row in all_retained_rows for quadruple in row.quadruples})
+        if split_mode == "provided_split"
+        else collect_aspect_inventory(all_retained_reviews)
+    )
     metadata = {
         "domain": domain,
         "split_mode": split_mode,
         "seed": seed if split_mode == "clean_split" else None,
         "sentiment_mode": sentiment_mode,
-        "dataset_version": DATASET_VERSION,
+        "dataset_version": dataset_version,
         "cleaning_configuration": {
-            "version": "review_level_clean_v1",
+            "version": "source_row_clean_v1" if split_mode == "provided_split" else "review_level_clean_v1",
             "remove_unannotated_reviews": manifest is not None,
             "unannotated_reviews_manifest": str(manifest.path) if manifest else None,
             "invalid_aspect_policy": "drop_and_log",
             "conflict_policy": "preserve",
         },
-        "annotation_status_policy": {
+        "aspect_inventory": aspect_inventory,
+        "fingerprint_algorithm": "sha256",
+        "source_paths": source_paths,
+        "source_fingerprints": source_fingerprints,
+        "split_statistics": split_stats,
+        "excluded_reviews": excluded_reviews,
+        "issue_counts": _issue_summary(issues),
+        "issues": [issue.to_dict() for issue in issues],
+        "review_level_leakage_checked": split_mode == "clean_split",
+    }
+    if split_mode == "provided_split":
+        metadata["provided_split_files"] = {
+            name: str(path.resolve()) for name, path in paths.split_files.items()
+        }
+        metadata["review_level_leakage_check"] = {
+            "status": "not_verifiable",
+            "reason": "TXT source rows do not include review IDs; review-level overlap cannot be checked.",
+            "source_split_attestation": "User confirms the provided train/dev/test split assignment is correct.",
+        }
+    else:
+        metadata["annotation_status_policy"] = {
             "zero_quadruple_reviews_without_manifest": "unknown",
             "unknown_reviews": "retain",
             "only_confirmed_unannotated_manifest_ids_are_excluded": True,
             "manifest": manifest_metadata,
             "status_counts": zero_status_counts,
             "status_by_review_id": dict(sorted(annotation_status_by_review_id.items())),
-        },
-        "raw_xml": str(paths.xml_path),
-        "original_split_files": {
+        }
+        metadata["raw_xml"] = str(paths.xml_path)
+        metadata["original_split_files"] = {
             name: str(path) for name, path in paths.split_files.items()
-        },
-        "aspect_inventory": collect_aspect_inventory(all_retained_reviews),
-        "fingerprint_algorithm": "sha256",
-        "source_paths": source_paths,
-        "source_fingerprints": source_fingerprints,
-        "split_statistics": split_stats,
-        "review_ids_by_split": {
+        }
+        metadata["review_ids_by_split"] = {
             name: sorted({review.review_id for review in reviews})
             for name, reviews in splits.items()
-        },
-        "excluded_reviews": excluded_reviews,
-        "issue_counts": _issue_summary(issues),
-        "issues": [issue.to_dict() for issue in issues],
-        "review_level_leakage_checked": split_mode == "clean_split",
-    }
+        }
     destination = output_root / domain
     raw_data_root = paths.domain_dir.parent.parent.resolve()
     resolved_destination = destination.resolve()

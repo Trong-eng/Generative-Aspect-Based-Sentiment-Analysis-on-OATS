@@ -1,21 +1,26 @@
-"""Audit raw OATS XML and the repository's original sentence splits."""
+"""Audit supplied OATS TXT splits by default, or XML with an explicit source mode."""
 
 from __future__ import annotations
 
 import argparse
 import json
 import logging
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Sequence
 
-from capstone.data.audit import audit_reviews
-from capstone.data.cleaning import clean_dataset
+from capstone.data.audit import audit_reviews, audit_sentence_rows
+from capstone.data.cleaning import clean_dataset, clean_split_rows
 from capstone.data.manifest import load_unannotated_review_manifest
-from capstone.data.parser import DataIssue, load_original_splits, parse_oats_xml
+from capstone.data.parser import (
+    DataIssue,
+    load_original_splits,
+    parse_oats_xml,
+    parse_original_split_file,
+)
 from capstone.data.paths import DOMAINS, resolve_domain_paths
-from capstone.data.serialization import read_jsonl
-from capstone.types import ReviewRecord
+from capstone.data.serialization import read_jsonl, sha256_file
+from capstone.types import ReviewRecord, SentenceRecord
 
 LOGGER = logging.getLogger("capstone.audit_data")
 
@@ -39,6 +44,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", type=Path, default=Path("artifacts/data_audit"))
     parser.add_argument("--sentiment-mode", choices=("raw_4_class", "paper_compatible"), default="raw_4_class")
     parser.add_argument(
+        "--source-mode",
+        choices=("provided_split", "xml"),
+        default="provided_split",
+        help="audit supplied TXT splits by default; use xml only for a separate XML corpus audit",
+    )
+    parser.add_argument(
         "--unannotated-manifest",
         type=Path,
         default=None,
@@ -52,7 +63,7 @@ def _issues_for_reviews(issues: Sequence[DataIssue], review_ids: set[str]) -> li
 
 
 def audit_processed(directory: str | Path) -> dict[str, object]:
-    """Inspect prepared split JSONL counts and report any review ID overlap."""
+    """Inspect prepared JSONL counts and report review overlap only when IDs exist."""
 
     root = Path(directory)
     metadata: dict[str, object] = {}
@@ -72,11 +83,50 @@ def audit_processed(directory: str | Path) -> dict[str, object]:
     )
     if not isinstance(status_by_id, dict):
         status_by_id = {}
-    splits: dict[str, list[ReviewRecord]] = {}
+    rows_by_split: dict[str, list[SentenceRecord]] = {}
     for split_name in ("train", "dev", "test"):
-        records = read_jsonl(root / f"{split_name}.jsonl")
+        rows_by_split[split_name] = read_jsonl(root / f"{split_name}.jsonl")
+
+    row_mode = metadata.get("split_mode") == "provided_split" or any(
+        row.review_id is None and row.source_line_number is not None
+        for rows in rows_by_split.values()
+        for row in rows
+    )
+    if row_mode:
+        if any(
+            row.review_id is not None or row.sentence_id is not None
+            for rows in rows_by_split.values()
+            for row in rows
+        ):
+            raise ValueError("provided split JSONL must not include review_id or sentence_id")
+        for split_name, rows in rows_by_split.items():
+            line_numbers = [row.source_line_number for row in rows]
+            if len(line_numbers) != len(set(line_numbers)):
+                raise ValueError(f"{split_name} JSONL contains duplicate source_line_number values")
+        return {
+            "processed_directory": str(root),
+            "splits": {
+                split_name: audit_sentence_rows(rows, split=split_name)
+                for split_name, rows in rows_by_split.items()
+            },
+            "review_level_leakage_check": metadata.get(
+                "review_level_leakage_check",
+                {
+                    "status": "not_verifiable",
+                    "reason": "Processed TXT rows do not include review IDs.",
+                },
+            ),
+            "aspect_inventory": metadata.get("aspect_inventory", []),
+            "split_fingerprints": metadata.get("split_fingerprints", {}),
+            "source_fingerprints": metadata.get("source_fingerprints", {}),
+        }
+
+    splits: dict[str, list[ReviewRecord]] = {}
+    for split_name, records in rows_by_split.items():
         grouped: dict[str, list] = defaultdict(list)
         for record in records:
+            if record.review_id is None or record.sentence_id is None:
+                raise ValueError("review-linked processed JSONL must include review_id and sentence_id")
             grouped[record.review_id].append(record)
         splits[split_name] = [
             ReviewRecord(review_id, sentences)
@@ -203,6 +253,78 @@ def audit_domain(
     }
 
 
+def audit_provided_split_domain(
+    domain: str,
+    *,
+    raw_root: Path | None = None,
+    sentiment_mode: str = "raw_4_class",
+) -> dict[str, object]:
+    """Audit TXT source rows and their cleaned training form without opening XML."""
+    paths = resolve_domain_paths(domain, raw_root, prefer_corrected_hotels=False)
+    source_paths = {
+        f"provided_{split_name}_txt": str(path.resolve())
+        for split_name, path in paths.split_files.items()
+    }
+    source_fingerprints = {
+        name: sha256_file(path)
+        for name, path in source_paths.items()
+    }
+    raw_splits: dict[str, list[SentenceRecord]] = {}
+    cleaned_splits: dict[str, list[SentenceRecord]] = {}
+    issues_by_split: dict[str, list[DataIssue]] = {}
+    issues: list[DataIssue] = []
+    for split_name, path in paths.split_files.items():
+        rows = [
+            SentenceRecord(
+                review_id=None,
+                sentence_id=None,
+                text=row.text,
+                quadruples=row.quadruples,
+                source_line_number=row.line_number,
+            )
+            for row in parse_original_split_file(path)
+        ]
+        cleaned = clean_split_rows(
+            rows,
+            sentiment_mode=sentiment_mode,
+            source_path=str(path.resolve()),
+        )
+        raw_splits[split_name] = rows
+        cleaned_splits[split_name] = cleaned.rows
+        issues_by_split[split_name] = cleaned.issues
+        issues.extend(cleaned.issues)
+
+    raw_rows = [row for rows in raw_splits.values() for row in rows]
+    cleaned_rows = [row for rows in cleaned_splits.values() for row in rows]
+    return {
+        "domain": domain,
+        "source_type": "provided_txt_splits",
+        "sentiment_mode": sentiment_mode,
+        "source_paths": source_paths,
+        "source_fingerprints": source_fingerprints,
+        "overall": audit_sentence_rows(raw_rows, issues=issues),
+        "splits": {
+            split_name: audit_sentence_rows(
+                rows,
+                issues=issues_by_split[split_name],
+                split=split_name,
+            )
+            for split_name, rows in raw_splits.items()
+        },
+        "cleaned_splits": {
+            split_name: audit_sentence_rows(rows, split=split_name)
+            for split_name, rows in cleaned_splits.items()
+        },
+        "issue_counts": dict(sorted(Counter(issue.reason for issue in issues).items())),
+        "issues": [issue.to_dict() for issue in issues],
+        "review_level_leakage_check": {
+            "status": "not_verifiable",
+            "reason": "TXT source rows do not include review IDs; review-level overlap cannot be checked.",
+            "source_split_attestation": "User confirms the provided train/dev/test split assignment is correct.",
+        },
+    }
+
+
 def run(args: argparse.Namespace) -> dict[str, object]:
     if args.processed is not None:
         if args.unannotated_manifest is not None:
@@ -224,18 +346,30 @@ def run(args: argparse.Namespace) -> dict[str, object]:
 
     if args.all_domains and args.unannotated_manifest is not None:
         raise ValueError("--unannotated-manifest requires auditing one domain")
+    if args.source_mode == "provided_split" and args.unannotated_manifest is not None:
+        raise ValueError("--unannotated-manifest cannot be used for TXT splits without review IDs")
     if not args.all_domains and args.domain is None:
         raise ValueError("raw audit requires --domain or --all-domains")
     domains = list(DOMAINS) if args.all_domains else [args.domain]
-    results = {
-        domain: audit_domain(
-            domain,
-            raw_root=args.raw_root,
-            sentiment_mode=args.sentiment_mode,
-            unannotated_manifest_path=args.unannotated_manifest,
-        )
-        for domain in domains
-    }
+    if args.source_mode == "provided_split":
+        results = {
+            domain: audit_provided_split_domain(
+                domain,
+                raw_root=args.raw_root,
+                sentiment_mode=args.sentiment_mode,
+            )
+            for domain in domains
+        }
+    else:
+        results = {
+            domain: audit_domain(
+                domain,
+                raw_root=args.raw_root,
+                sentiment_mode=args.sentiment_mode,
+                unannotated_manifest_path=args.unannotated_manifest,
+            )
+            for domain in domains
+        }
     args.output_dir.mkdir(parents=True, exist_ok=True)
     for domain, result in results.items():
         destination = args.output_dir / f"{domain}.json"

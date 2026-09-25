@@ -52,6 +52,14 @@ def _quads(record: dict[str, Any]) -> list[Quadruple]:
     return [Quadruple.from_dict(value) if hasattr(Quadruple, "from_dict") else Quadruple(**value) for value in values]
 
 
+def _record_identity(record: dict[str, Any]) -> dict[str, Any]:
+    return {
+        field: record[field]
+        for field in ("review_id", "sentence_id", "source_line_number")
+        if record.get(field) is not None
+    }
+
+
 def _serializer_and_parser(model_type: str) -> tuple[Callable, Callable]:
     if model_type == "gas":
         return serialize_gas, parse_gas_generation
@@ -309,10 +317,9 @@ def train_model(config_path: str | Path) -> Path:
                 for record, raw_generation in zip(source_records, decoded):
                     parsed = parser(raw_generation, known_aspects=known_aspects)
                     cases.append({
+                        **_record_identity(record),
                         "gold_quadruples": _quads(record),
                         "predicted_quadruples": parsed.quadruples,
-                        "review_id": record.get("review_id"),
-                        "sentence_id": record.get("sentence_id"),
                         "text": record.get("text", ""),
                     })
         metrics, _, _ = evaluate_records(cases)

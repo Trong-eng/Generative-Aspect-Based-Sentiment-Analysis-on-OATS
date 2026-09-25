@@ -25,14 +25,14 @@ git submodule update --init --recursive
 
 Phần **mã nguồn cốt lõi đã được viết**:
 
-- Đọc dữ liệu OATS và chuẩn bị tập huấn luyện, có kiểm tra để các câu của cùng một bài đánh giá không bị chia sang nhiều tập.
+- Đọc trực tiếp các split TXT `train/dev/test` của OATS hoặc dùng luồng XML/review-level riêng; luồng TXT giữ nguyên phân chia do nguồn cung cấp.
 - Giữ lại các bài không có nhãn khi chưa có bằng chứng rõ ràng; chỉ cho phép loại bài theo danh sách có nguồn xác nhận.
 - Lưu dấu vết dữ liệu đầu vào và từng tập dữ liệu để nhận biết khi nguồn hoặc nội dung thay đổi.
 - Tạo hai cách tổ chức đầu ra cho mô hình: GAS theo hướng trích xuất và Paraphrase-T5.
 - Viết luồng huấn luyện, dự đoán, đánh giá, phân tích lỗi và so sánh hai thí nghiệm.
 - Viết đủ sáu cấu hình cho hai mô hình trên cả ba lĩnh vực, cùng tài liệu hướng dẫn và bộ kiểm tra tự động cho các thành phần chính.
 
-**Phần chưa làm:** chưa chạy bộ kiểm tra; chưa xử lý dữ liệu; chưa huấn luyện, dự đoán, đánh giá hay benchmark. Vì vậy hiện chưa có kết quả độ chính xác hoặc bằng chứng rằng toàn bộ pipeline chạy thành công trên máy. Những điều này được ghi là **UNVERIFIED — requires execution**.
+Sáu cấu hình seed 42 hiện dùng trực tiếp các split TXT. Mỗi dòng không rỗng là một mẫu riêng, được nhận diện bằng domain, split và số dòng vật lý; pipeline không suy diễn review/sentence ID và không thể xác minh leakage ở cấp review từ các file này. Nhóm xác nhận sẽ tin cậy cách chia train/dev/test có sẵn. Kết quả chạy thật được ghi riêng trong [báo cáo Thanh_03](report/Thanh_03_Seed42_Execution_Report.md); không xem số trong paper là kết quả của project.
 
 GAS trong dự án là một cách triển khai theo hướng trích xuất cho bài toán ASQP. Bài báo OATS không công bố đầy đủ cú pháp đầu ra GAS-T5 dùng để tạo các con số trong bảng kết quả, nên dự án **không tuyên bố tái tạo chính xác** thí nghiệm GAS của bài báo.
 
@@ -40,22 +40,22 @@ GAS trong dự án là một cách triển khai theo hướng trích xuất cho 
 |---|---|
 | Mã nguồn pipeline và ma trận 2 mô hình × 3 lĩnh vực | Đã viết; chưa xác minh khi chạy |
 | Tài liệu giải thích và hướng dẫn | Đã viết |
-| Bộ kiểm tra tự động | Đã viết; chưa chạy |
-| Chuẩn bị dữ liệu và kiểm tra chia tập | Chưa chạy |
-| Huấn luyện và dự đoán bằng mô hình | Chưa chạy |
-| Kết quả đánh giá và so sánh với bài báo | Chưa có |
+| Bộ kiểm tra tự động | Đã viết; trạng thái lần chạy xem trong báo cáo Thanh_03 |
+| Chuẩn bị dữ liệu và kiểm tra split TXT | Dùng các file train/dev/test có sẵn; không kiểm tra leakage cấp review |
+| Huấn luyện và dự đoán bằng mô hình | Trạng thái lần chạy xem trong báo cáo Thanh_03 |
+| Kết quả đánh giá và so sánh với bài báo | Chỉ báo cáo kết quả thực nghiệm của project; không thay bằng số paper |
 
-## Cách bắt đầu khi sẵn sàng chạy
+## Lệnh chạy pipeline seed 42
 
-Các lệnh bên dưới được ghi để sử dụng về sau. Chúng **chưa được chạy** trong task này. Cần cài các gói được liệt kê trong `requirements.txt` và lấy dữ liệu theo hướng dẫn ở trên trước khi dùng.
+Các lệnh bên dưới là luồng chạy seed 42 với split TXT được cung cấp. Cần cài các gói được liệt kê trong `requirements.txt` và lấy submodule OATS trước khi dùng.
 
 ```bash
-# 1. Kiểm tra toàn bộ dữ liệu gốc
-python -m capstone.audit_data --all-domains --sentiment-mode paper_compatible --raw-root OATS-ABSA-Dataset/data --output-dir artifacts/data_audit/raw
+# 1. Kiểm tra các split TXT (không đọc XML)
+python -m capstone.audit_data --all-domains --source-mode provided_split --sentiment-mode paper_compatible --raw-root OATS-ABSA-Dataset/data --output-dir artifacts/data_audit/raw
 
-# 2. Chuẩn bị và kiểm tra ba lĩnh vực bằng cùng seed 42
+# 2. Chuẩn bị trực tiếp từ train/dev/test TXT; seed 42 không chia lại dữ liệu
 for domain in amazon_ff coursera hotels; do
-  python -m capstone.prepare_data --domain "$domain" --split-mode clean_split --seed 42 --sentiment-mode paper_compatible --raw-root OATS-ABSA-Dataset/data --output-root data/processed
+  python -m capstone.prepare_data --domain "$domain" --split-mode provided_split --seed 42 --sentiment-mode paper_compatible --raw-root OATS-ABSA-Dataset/data --output-root data/processed
   python -m capstone.audit_data --processed "data/processed/$domain" --output-dir "artifacts/data_audit/processed/$domain"
 done
 
@@ -83,6 +83,8 @@ Repository có sáu cấu hình: GAS và Paraphrase cho `amazon_ff`, `coursera`,
 - Khi so sánh mô hình, dự án kiểm tra danh tính các tập dữ liệu chứ không chỉ so số lượng mẫu.
 - `generation.early_stopping` cần là giá trị boolean thực sự trong YAML (`true` hoặc `false`).
 
+Trong luồng TXT, mỗi dòng là một mẫu riêng; kể cả hai dòng có cùng text nhưng nhãn khác nhau vẫn được giữ. Metadata lưu source path/fingerprint và số dòng. Vì TXT không chứa review ID, báo cáo leakage cấp review là `not_verifiable`; pipeline tin cậy phân chia sẵn theo xác nhận của nhóm. Hướng dẫn đầy đủ, gồm cấu trúc artifact, audit, phân tích lỗi và multi-seed, có trong [hướng dẫn chạy capstone](report/Trong_02_Capstone_Core_Execution_Guide.md).
+
 ## Cấu trúc chính
 
 | Thư mục / tệp | Vai trò |
@@ -104,4 +106,4 @@ Repository có sáu cấu hình: GAS và Paraphrase cho `amazon_ff`, `coursera`,
 - [Bài báo OATS tại ACL Anthology](https://aclanthology.org/2024.lrec-main.1080/)
 - [Kho dữ liệu OATS-ABSA](https://github.com/RiTUAL-MBZUAI/OATS-ABSA)
 
-**Trạng thái kiểm chứng:** `UNVERIFIED — requires execution`. Chưa chạy code, tests, xử lý dữ liệu, huấn luyện, dự đoán, đánh giá hoặc benchmark.
+**Trạng thái kiểm chứng:** xem [báo cáo Thanh_03](report/Thanh_03_Seed42_Execution_Report.md) để biết chính xác các bước đã chạy và còn chờ; không suy diễn trạng thái từ hướng dẫn này.

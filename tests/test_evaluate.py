@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from capstone.evaluate import run_evaluation
+from capstone.error_analysis import write_error_analysis
 from capstone.models.base import ParsedGeneration, Seq2SeqGenerator
 
 
@@ -150,6 +151,64 @@ def test_evaluation_uses_experiment_config_and_writes_under_selected_experiment(
     assert run_metadata["checkpoint"] == "checkpoints/checkpoint-epoch-001"
     assert run_metadata["evaluation_settings"]["generation"]["num_beams"] == 1
     assert observed == {"early_stopping": False, "logging_level": "DEBUG"}
+
+
+def test_evaluation_keeps_txt_source_line_without_null_review_ids(tmp_path, monkeypatch):
+    experiment, config_path, _ = _evaluation_tree(tmp_path)
+    prepared = tmp_path / "processed" / "hotels"
+    test_path = prepared / "test.jsonl"
+    test_path.write_text(
+        json.dumps({
+            "source_line_number": 19,
+            "text": "A clean room.",
+            "quadruples": [{
+                "target": "room",
+                "aspect": "rooms cleanliness",
+                "opinion": "clean",
+                "sentiment": "positive",
+            }],
+        }) + "\n",
+        encoding="utf-8",
+    )
+    prepared_metadata_path = prepared / "metadata.json"
+    prepared_metadata = json.loads(prepared_metadata_path.read_text(encoding="utf-8"))
+    test_fingerprint = hashlib.sha256(test_path.read_bytes()).hexdigest()
+    prepared_metadata["split_fingerprints"]["test"] = test_fingerprint
+    prepared_metadata_path.write_text(json.dumps(prepared_metadata), encoding="utf-8")
+    experiment_metadata_path = experiment / "metadata.json"
+    experiment_metadata = json.loads(experiment_metadata_path.read_text(encoding="utf-8"))
+    experiment_metadata["split_fingerprints"]["test"] = test_fingerprint
+    experiment_metadata_path.write_text(json.dumps(experiment_metadata), encoding="utf-8")
+
+    class StubModel:
+        def generate(self, texts, **_kwargs):
+            return ["[]" for _ in texts]
+
+    monkeypatch.setattr(
+        Seq2SeqGenerator,
+        "from_checkpoint",
+        classmethod(lambda cls, checkpoint: StubModel()),
+    )
+    monkeypatch.setattr(
+        "capstone.evaluate.parse_gas_generation",
+        lambda raw, known_aspects=None: ParsedGeneration(),
+    )
+
+    output_dir = run_evaluation(config_path, experiment, split="test")
+
+    prediction = json.loads((output_dir / "predictions.jsonl").read_text(encoding="utf-8"))
+    error = json.loads((output_dir / "error_cases.jsonl").read_text(encoding="utf-8"))
+    assert prediction["source_line_number"] == 19
+    assert "review_id" not in prediction and "sentence_id" not in prediction
+    assert error["source_line_number"] == 19
+    assert "review_id" not in error and "sentence_id" not in error
+    error_analysis_path = write_error_analysis(
+        output_dir / "predictions.jsonl",
+        output_dir / "error_analysis.jsonl",
+    )
+    analysis_error = json.loads(error_analysis_path.read_text(encoding="utf-8"))
+    assert analysis_error["source_line_number"] == 19
+    assert "review_id" not in analysis_error and "sentence_id" not in analysis_error
 
 
 def test_evaluation_rejects_requested_config_that_differs_from_checkpoint_provenance(

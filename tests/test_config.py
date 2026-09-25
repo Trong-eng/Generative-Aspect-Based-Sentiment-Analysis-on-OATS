@@ -125,11 +125,12 @@ def test_repository_ships_a_complete_unique_three_domain_config_matrix():
             assert config["experiment"] == {
                 "name": expected_experiment,
                 "domain": domain,
-                "split_mode": "clean_split",
+                "split_mode": "provided_split",
                 "seed": 42,
             }
             assert config["model"]["type"] == model_type
             assert config["dataset"]["sentiment_mode"] == "paper_compatible"
+            assert config["dataset"]["version"] == "oats_provided_txt_v1"
             assert Path(config["paths"]["processed_data"]).name == "processed"
             assert Path(config["paths"]["output_dir"]).name == expected_experiment
             experiment_names.add(config["experiment"]["name"])
