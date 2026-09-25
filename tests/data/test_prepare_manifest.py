@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -13,8 +14,8 @@ def test_prepare_cli_accepts_config_and_optional_manifest():
         ["--config", "configs/gas_t5_hotels.yaml", "--unannotated-manifest", "status.json"]
     )
 
-    assert str(args.config) == "configs/gas_t5_hotels.yaml"
-    assert str(args.unannotated_manifest) == "status.json"
+    assert args.config == Path("configs/gas_t5_hotels.yaml")
+    assert args.unannotated_manifest == Path("status.json")
 
 
 def test_prepare_cli_requires_an_explicit_domain_when_no_config_is_supplied():

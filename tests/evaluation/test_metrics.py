@@ -1,3 +1,5 @@
+import pytest
+
 from capstone.evaluation import evaluate_quadruples, evaluate_records
 from capstone.types import Quadruple
 
@@ -76,6 +78,59 @@ def test_record_diagnostics_include_components_strata_and_count_buckets():
     assert errors[0]["wrong_field_mismatches"][0]["wrong_fields"] == ["target"]
     assert len(errors[0]["implicit_target_failures"]) == 1
     assert diagnostics["counts"]["example_accuracy"] == 0.5
+
+
+def test_implicit_target_failures_include_unpaired_misses_and_spurious_predictions():
+    implicit_target = q("", "SERVICE#GENERAL", "slow", "negative")
+    expected_quadruple = {
+        "target": "NULL",
+        "aspect": "service general",
+        "opinion": "slow",
+        "sentiment": "negative",
+    }
+
+    _, _, errors = evaluate_records(
+        [
+            {"gold_quadruples": [implicit_target], "predicted_quadruples": []},
+            {"gold_quadruples": [], "predicted_quadruples": [implicit_target]},
+        ]
+    )
+
+    assert errors[0]["implicit_target_failures"] == [
+        {"gold": expected_quadruple, "predicted": None, "reason": "missed_implicit"}
+    ]
+    assert errors[1]["implicit_target_failures"] == [
+        {"gold": None, "predicted": expected_quadruple, "reason": "spurious_implicit"}
+    ]
+
+
+@pytest.mark.parametrize(
+    ("gold", "predicted", "unpaired_reason"),
+    [
+        (
+            [q("", "SERVICE#GENERAL", "slow", "negative")] * 2,
+            [q("waiter", "SERVICE#GENERAL", "slow", "negative")],
+            "missed_implicit",
+        ),
+        (
+            [q("waiter", "SERVICE#GENERAL", "slow", "negative")],
+            [q("", "SERVICE#GENERAL", "slow", "negative")] * 2,
+            "spurious_implicit",
+        ),
+    ],
+)
+def test_implicit_target_mismatch_keeps_any_unpaired_duplicate(
+    gold, predicted, unpaired_reason
+):
+    _, _, errors = evaluate_records(
+        [{"gold_quadruples": gold, "predicted_quadruples": predicted}]
+    )
+
+    failures = errors[0]["implicit_target_failures"]
+    assert sum("wrong_fields" in failure for failure in failures) == 1
+    assert [failure.get("reason") for failure in failures if "reason" in failure] == [
+        unpaired_reason
+    ]
 
 
 def test_record_accepts_attribute_based_input():

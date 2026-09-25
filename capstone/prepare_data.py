@@ -118,15 +118,15 @@ def prepare_domain(
         annotation_status_by_review_id: dict[str, str] = {}
         all_retained_reviews = []
         excluded_reviews = []
-        for split_name, split_reviews in original_splits.items():
-            review_ids = {review.review_id for review in split_reviews}
+        for split_name, reviews_in_split in original_splits.items():
+            review_ids = {review.review_id for review in reviews_in_split}
             relevant_source_issues = [
                 issue
                 for issue in parsed.issues
                 if issue.review_id is None or issue.review_id in review_ids
             ]
             cleaned_split = clean_dataset(
-                split_reviews,
+                reviews_in_split,
                 sentiment_mode=sentiment_mode,
                 source_issues=relevant_source_issues,
                 **manifest_args,

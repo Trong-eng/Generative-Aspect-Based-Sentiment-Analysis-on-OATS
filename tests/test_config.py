@@ -131,7 +131,7 @@ def test_repository_ships_a_complete_unique_three_domain_config_matrix():
             assert config["model"]["type"] == model_type
             assert config["dataset"]["sentiment_mode"] == "paper_compatible"
             assert Path(config["paths"]["processed_data"]).name == "processed"
-            assert Path(config["paths"]["output_dir]).name == expected_experiment
+            assert Path(config["paths"]["output_dir"]).name == expected_experiment
             experiment_names.add(config["experiment"]["name"])
             output_directories.add(config["paths"]["output_dir"])
             paired.append(config)
