@@ -8,6 +8,7 @@
 - Thời gian chạy: bắt đầu `2026-09-25 09:28:01 +07:00`; dừng tại raw audit (log ghi lần cuối `2026-09-25 09:30:35 +07:00`). Múi giờ: Asia/Saigon (UTC+07:00).
 - Repository: `D:\DS-AI\Web mining project\Generative-Aspect-Based-Sentiment-Analysis-on-OATS`.
 - Branch: `run/full-oats-seed42`; code commit trước pipeline: `8f541e98f780f3b5481f4313adc2714236d552c8` (`fix: align tests and diagnostics with pipeline behavior`). `main` vẫn ở `d749485640a880cf95ae46589522c9fcc83f49d8`.
+- Sau khi pipeline đã dừng, final review tìm thấy paired aspect mismatch bị gắn nhầm implicit-target diagnostics. Chỉ diagnostics/test được sửa ở commit `35df91766fe5470214d3138bf6a11cd201d79883`; sửa đổi này không nằm trong pipeline attempt và không đổi official TP/FP/FN, split hay config.
 - OATS submodule: `2089631462f06fc0d0ac07186fa65236e19784ce`.
 - Runtime: Python 3.11.16; PyTorch 2.14.0+cu132; Transformers 4.57.6; PyYAML 6.0.3; NumPy 2.4.6; pytest 9.1.1; SentencePiece 0.2.2.
 - GPU: NVIDIA GeForce RTX 4060 Ti, 16,380 MiB; driver 595.79; CUDA runtime 13.2.
@@ -21,8 +22,22 @@
 | CUDA matrix smoke | PASS trên RTX 4060 Ti | `artifacts/setup/gpu-smoke-seed42.json` |
 | T5-base load/generation smoke | PASS trên `cuda:0` | `artifacts/setup/t5-cuda-smoke-seed42.json` |
 | Sáu config và sáu CLI help | PASS | `artifacts/setup/preflight-execution.log`, `artifacts/setup/cli-*-help.log` |
-| Full test suite | PASS — 113/113, 3.50 giây; dùng `--basetemp` riêng | `artifacts/setup/pytest-full-seed42.log` |
+| Full test suite trước pipeline | PASS — 113/113, 3.50 giây; dùng `--basetemp` riêng | `artifacts/setup/pytest-full-seed42.log` |
 | Raw audit cả ba domain | BLOCKED — exit code 1 ở Amazon_FF trước khi ghi JSON | `artifacts/setup/raw-audit-seed42.log` |
+
+Sau post-stop diagnostics fix, full suite được xác minh lại trên branch cuối: 114/114 pass trong 4.25 giây; test metrics liên quan pass 13/13. Log lần lượt là `artifacts/setup/pytest-final-seed42.log` và `artifacts/setup/pytest-review-fix-green.log`.
+
+### Commands và exit status
+
+- `D:\Anaconda\envs\oats-seed42\python.exe --version` — exit 0; Python 3.11.16.
+- `D:\Anaconda\envs\oats-seed42\python.exe -m pip check` — exit 0.
+- `D:\Anaconda\envs\oats-seed42\python.exe -m pip show torch transformers PyYAML numpy pytest sentencepiece` — exit 0.
+- `nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader` — exit 0.
+- Python smoke (`torch.cuda` matrix operation, load `t5-base`, generate tối đa 4 token trên `cuda:0`) — exit 0.
+- Python validation dùng `capstone.config.load_config` với sáu YAML chuẩn — exit 0. Từng lệnh `python -m capstone.audit_data --help`, `python -m capstone.prepare_data --help`, `python -m capstone.train --help`, `python -m capstone.evaluate --help`, `python -m capstone.compare --help` và `python -m capstone.error_analysis --help` — đều exit 0.
+- `D:\Anaconda\envs\oats-seed42\python.exe -m pytest -ra --basetemp "D:\DS-AI\Web mining project\Generative-Aspect-Based-Sentiment-Analysis-on-OATS\artifacts\setup\pytest-basetemp-seed42-20260925-092843-432"` — exit 0, 113/113 trước pipeline.
+- `D:\Anaconda\envs\oats-seed42\python.exe -m pytest -ra --basetemp "D:\DS-AI\Web mining project\Generative-Aspect-Based-Sentiment-Analysis-on-OATS\artifacts\setup\pytest-final-seed42-20260925-094559-280"` — exit 0, 114/114 trên branch sau review fix.
+- Raw audit command ở trên — exit 1; traceback đầy đủ trong `artifacts/setup/raw-audit-seed42.log`.
 
 Lệnh raw audit đã thử:
 
@@ -78,7 +93,7 @@ Chưa có evaluation nên không tạo ba same-domain comparison JSON hoặc sá
 ## Artifacts và giới hạn
 
 - Artifact root trên máy này: `D:\DS-AI\Web mining project\Generative-Aspect-Based-Sentiment-Analysis-on-OATS\artifacts`.
-- Dung lượng `artifacts/` tại thời điểm lập report: 229,600 bytes (khoảng 0.22 MiB; 275 file, chủ yếu là setup/test evidence). `data/processed/` chưa tồn tại.
+- Dung lượng `artifacts/` sau final verification: 408,718 bytes (khoảng 0.39 MiB; 534 file, chủ yếu là setup/test evidence). `data/processed/` chưa tồn tại.
 - Artifacts chỉ lưu cục bộ trên ổ D:, không upload và không đưa checkpoint/dữ liệu lớn lên Git.
 - Nếu chạy thành công về sau, GAS phải được mô tả là extraction-style ASQP adaptation; không tuyên bố tái tạo chính xác target syntax GAS-T5 của paper.
 - Không có deviation về config/methodology. Pipeline dừng đúng tại raw audit theo stop condition; không chạy prepare, train, evaluate, compare, error analysis hay inference.
