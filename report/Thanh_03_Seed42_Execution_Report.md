@@ -18,6 +18,7 @@ Giữ nguyên model backbone, hyperparameter, generation settings, cách tính m
 - Repository: D:/DS-AI/Web mining project/Generative-Aspect-Based-Sentiment-Analysis-on-OATS.
 - Branch: run/full-oats-seed42. Code commit dùng cho cả sáu run: 8a6e20cb880ad8749370a48a6d8b53a19a75aa2b. main giữ nguyên ở d749485640a880cf95ae46589522c9fcc83f49d8.
 - OATS submodule: 2089631462f06fc0d0ac07186fa65236e19784ce.
+- Các run được tạo trong checkout trên D:. Sau khi hoàn thành, người dùng yêu cầu chuyển artifact tree sang E:; run metadata vẫn giữ các absolute path D: ghi tại thời điểm thực thi.
 - Runtime: Python 3.11.16; PyTorch 2.14.0+cu132; Transformers 4.57.6; PyYAML 6.0.3; NumPy 2.4.6; pytest 9.1.1; SentencePiece 0.2.2.
 - GPU: NVIDIA GeForce RTX 4060 Ti, 16,380 MiB VRAM; driver 595.79; CUDA 13.2.
 - pip check, CUDA/T5 smoke, sáu config validation và các CLI help: PASS theo artifacts/setup.
@@ -34,7 +35,7 @@ Lệnh raw audit chạy với source_mode=provided_split trên TXT cho cả ba d
 | coursera | 7188 / 898 / 899 | 7875 | 1884 / 215 / 726 | 35 | 6676 / 928 / 236 | 1901 / 215 / 726 | 0 / 0 |
 | hotels | 7834 / 979 / 980 | 11474 | 1923 / 386 / 850 | 37 | 10146 / 1049 / 242 | 1936 / 387 / 850 | 0 / 0 |
 
-Raw audit: artifacts/data_audit/raw/{amazon_ff,coursera,hotels,summary}.json. Processed datasets: data/processed/<domain>/{train,dev,test}.jsonl và metadata.json. Processed audit: artifacts/data_audit/processed/<domain>/{processed,summary}.json. Đối chiếu trước train xác nhận đúng domain, provided_split, line counts và fingerprints giữa TXT nguồn, metadata, JSONL và processed audit.
+Raw audit: artifacts/data_audit/raw/{amazon_ff,coursera,hotels,summary}.json. Processed datasets: data/processed/<domain>/{train,dev,test}.jsonl và metadata.json. Processed audit: artifacts/data_audit/processed/<domain>/{processed,summary}.json. Sau relocation, mọi đường dẫn artifacts/... trong report này nằm dưới E:/models/OATS_seed42; processed datasets vẫn ở D:. Đối chiếu trước train xác nhận đúng domain, provided_split, line counts và fingerprints giữa TXT nguồn, metadata, JSONL và processed audit.
 
 | Domain | Review-level leakage | Ghi chú |
 |---|---|---|
@@ -105,9 +106,10 @@ Artifacts:
 
 ## 8. Artifacts, giới hạn và kết luận
 
-- Artifact root: D:/DS-AI/Web mining project/Generative-Aspect-Based-Sentiment-Analysis-on-OATS/artifacts — 23,286,697,743 bytes (1,683 files; khoảng 23.29 GB), snapshot 2026-09-25 21:41:52 +07:00.
+- Artifact root sau relocation: E:/models/OATS_seed42/artifacts — 23,286,697,743 bytes (1,683 files; khoảng 23.29 GB), kiểm tra lúc 2026-09-26 15:09 +07:00. Toàn bộ file count và byte count khớp nguồn trước khi xóa; không thiếu/thừa file hay lệch size. SHA-256 của model.safetensors trong best checkpoint của cả sáu experiment khớp giữa nguồn và đích.
+- Nguồn D:/DS-AI/Web mining project/Generative-Aspect-Based-Sentiment-Analysis-on-OATS/artifacts đã được gỡ sau xác minh; các đường dẫn tuyệt đối D: bên trong metadata là provenance của thời điểm chạy, không phải vị trí hiện tại. Các đường dẫn artifacts/... trong các bảng phía trên được resolve tương đối từ E:/models/OATS_seed42.
 - Processed data root: D:/DS-AI/Web mining project/Generative-Aspect-Based-Sentiment-Analysis-on-OATS/data/processed — 6,663,017 bytes (12 files; khoảng 6.66 MB).
-- Cộng hai root trên: 23,293,360,760 bytes, snapshot 2026-09-25 21:41:52 +07:00. Dữ liệu và checkpoints nằm cục bộ trên ổ D:, không upload artifacts/checkpoints lên GitHub; artifacts/ và data/processed/ được ignore. Chỉ code và report được đưa lên branch.
+- Cộng hai root trên: 23,293,360,760 bytes. E: còn 731,058,827,264 bytes trống sau khi chuyển. Artifacts và checkpoints nằm cục bộ trên ổ E:, processed data trên D:, không upload dữ liệu lớn lên GitHub. Chỉ code và report được đưa lên branch.
 - Chỉ chạy seed 42. Chưa chạy protocol năm seed, inference bổ sung, hay gộp kết quả giữa domain.
 - GAS ở đây là extraction-style ASQP adaptation, không phải reproduction chính xác target syntax của GAS-T5 paper (target syntax gốc chưa được xác định trong codebase).
 
