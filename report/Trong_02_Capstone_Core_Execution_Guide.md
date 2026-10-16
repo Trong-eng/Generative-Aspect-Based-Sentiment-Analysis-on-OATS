@@ -314,5 +314,6 @@ Paper reference ASQP F1:
 
 - Trạng thái test suite và dependency/runtime compatibility: ghi theo preflight thực tế trong báo cáo Thanh_03.
 - Cần audit TXT, preparation và fingerprints cho cả ba domain; review-level leakage không thể kiểm tra bằng nguồn TXT này.
-- `UNVERIFIED — requires execution`: sáu training/evaluation runs, checkpoint selection và GPU memory.
-- `UNVERIFIED — requires execution`: metrics, comparisons, error analysis, inference và mọi số liệu kết quả.
+- Sáu training/evaluation runs, checkpoint selection và GPU memory: đã chạy seed 42 theo `provided_split`; chi tiết và giới hạn trong báo cáo Thanh_03.
+- Metrics, comparisons, error analysis và mọi số liệu kết quả: lấy theo báo cáo Thanh_03, không suy diễn từ hướng dẫn này. Số liệu `implicit_opinion_failure` công bố trước ngày 2026-10-16 được tính khi chưa khử trùng lặp mismatch, cần tính lại từ `predictions.jsonl` nếu muốn trích dẫn.
+- `UNVERIFIED — requires execution`: mọi lượt chạy theo `clean_split` (config trong `configs/clean_split/`) và protocol multi-seed.
