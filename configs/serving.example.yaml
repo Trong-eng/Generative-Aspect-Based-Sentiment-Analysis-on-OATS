@@ -1,0 +1,34 @@
+# Checkpoint registry for `capstone.service` (see report/Nhan_04_Serving_And_Dashboard_Report.md).
+#
+# Point ASQP_SERVING_CONFIG at a copy of this file with real paths:
+#   ASQP_SERVING_CONFIG=configs/serving.yaml \
+#   python -m uvicorn capstone.service.app:get_app --factory --port 8000
+#
+# `checkpoint` is an experiment directory containing best_checkpoint.json (or a checkpoint
+# directory itself). Relative paths resolve against this file's directory. Pairs that are
+# absent, or whose checkpoint is missing, answer MODEL_NOT_READY instead of failing startup.
+models:
+  - domain: hotels
+    model_type: paraphrase
+    checkpoint: ../artifacts/experiments/paraphrase_t5_hotels_seed42
+    config: paraphrase_t5_hotels.yaml
+  - domain: hotels
+    model_type: gas
+    checkpoint: ../artifacts/experiments/gas_t5_hotels_seed42
+    config: gas_t5_hotels.yaml
+  - domain: amazon_ff
+    model_type: paraphrase
+    checkpoint: ../artifacts/experiments/paraphrase_t5_amazon_ff_seed42
+    config: paraphrase_t5_amazon_ff.yaml
+  - domain: amazon_ff
+    model_type: gas
+    checkpoint: ../artifacts/experiments/gas_t5_amazon_ff_seed42
+    config: gas_t5_amazon_ff.yaml
+  - domain: coursera
+    model_type: paraphrase
+    checkpoint: ../artifacts/experiments/paraphrase_t5_coursera_seed42
+    config: paraphrase_t5_coursera.yaml
+  - domain: coursera
+    model_type: gas
+    checkpoint: ../artifacts/experiments/gas_t5_coursera_seed42
+    config: gas_t5_coursera.yaml

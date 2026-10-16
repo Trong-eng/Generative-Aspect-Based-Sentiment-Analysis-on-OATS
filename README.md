@@ -85,6 +85,24 @@ Repository có sáu cấu hình: GAS và Paraphrase cho `amazon_ff`, `coursera`,
 
 Trong luồng TXT, mỗi dòng là một mẫu riêng; kể cả hai dòng có cùng text nhưng nhãn khác nhau vẫn được giữ. Metadata lưu source path/fingerprint và số dòng. Vì TXT không chứa review ID, báo cáo leakage cấp review là `not_verifiable`; pipeline tin cậy phân chia sẵn theo xác nhận của nhóm. Hướng dẫn đầy đủ, gồm cấu trúc artifact, audit, phân tích lỗi và multi-seed, có trong [hướng dẫn chạy capstone](report/Trong_02_Capstone_Core_Execution_Guide.md).
 
+## Giao diện web và service dự đoán
+
+Ngoài pipeline dòng lệnh, repository có giao diện web (`frontend/`) và một service HTTP (`capstone/service/`) để dùng mô hình đã huấn luyện:
+
+```bash
+# 1. Service dự đoán: khai báo checkpoint cho từng (domain, model)
+pip install -r requirements-serve.txt
+cp configs/serving.example.yaml configs/serving.yaml   # sửa đường dẫn checkpoint cho đúng máy
+ASQP_SERVING_CONFIG=configs/serving.yaml ASQP_CORS_ORIGINS=http://127.0.0.1:5173 \
+  python -m uvicorn capstone.service.app:get_app --factory --port 8000
+
+# 2. Giao diện web, gọi service qua proxy dev
+cd frontend && npm install
+VITE_USE_MOCK_API=false DEV_PROXY_TARGET=http://127.0.0.1:8000 npm run dev
+```
+
+Service có `POST /predict` (một câu), `POST /predict/batch` (nhiều câu, dùng cho dashboard theo khía cạnh) và `GET /health`. Cặp `(domain, model)` chưa khai báo hoặc thiếu checkpoint trả về `MODEL_NOT_READY` thay vì dựng lỗi; mô hình chỉ được nạp một lần rồi dùng lại. Chi tiết contract và giao diện xem [frontend/README.md](frontend/README.md); giải thích thiết kế xem [báo cáo kỹ thuật](report/bao-cao-ky-thuat/main.tex).
+
 ## Cấu trúc chính
 
 | Thư mục / tệp | Vai trò |
@@ -93,10 +111,12 @@ Trong luồng TXT, mỗi dòng là một mẫu riêng; kể cả hai dòng có c
 | `capstone/models/` | Định dạng đầu ra và đọc dự đoán của GAS/Paraphrase |
 | `capstone/training/` | Luồng huấn luyện |
 | `capstone/evaluation/` | Chuẩn hóa và tính điểm |
-| `configs/` | Sáu cấu hình GAS/Paraphrase cho ba lĩnh vực |
+| `capstone/service/` | Service HTTP `POST /predict`, `POST /predict/batch` |
+| `frontend/` | Giao diện web: phân tích một câu và dashboard theo khía cạnh |
+| `configs/` | Sáu cấu hình GAS/Paraphrase cho ba lĩnh vực; `clean_split/` và `serving.example.yaml` |
 | `tests/` | Các kiểm tra tự động đã viết |
 | `docs/` | Ghi chú về bài báo và lựa chọn triển khai |
-| `report/` | Báo cáo triển khai và hướng dẫn sử dụng |
+| `report/` | Báo cáo triển khai, hướng dẫn sử dụng và báo cáo kỹ thuật |
 
 ## Tài liệu và nguồn tham khảo
 
