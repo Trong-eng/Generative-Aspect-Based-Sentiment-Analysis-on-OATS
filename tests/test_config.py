@@ -184,3 +184,28 @@ def test_repository_keeps_a_clean_split_config_outside_the_reported_matrix():
         assert config["cleaning"]["version"] == "review_level_clean_v1"
         assert config["paths"]["output_dir"] not in matrix_output_dirs
         assert Path(config["paths"]["processed_data"]).name != "processed"
+
+
+def test_paths_resolve_against_the_project_root_for_nested_config_directories(tmp_path):
+    """Configs in a subdirectory of configs/ (e.g. configs/clean_split/) must resolve
+    relative paths against the project root, not against their own folder."""
+    project_root = Path(__file__).resolve().parents[1]
+    nested = project_root / "configs" / "clean_split" / "paraphrase_t5_hotels_clean_split.yaml"
+
+    config = load_config(nested)
+
+    assert config["_project_root"] == project_root
+    assert config["paths"]["processed_data"] == project_root / "data" / "processed_clean_split"
+    assert config["paths"]["raw_data"] == project_root / "OATS-ABSA-Dataset" / "data"
+
+
+def test_config_outside_a_configs_directory_resolves_against_its_own_folder(tmp_path):
+    project_root = Path(__file__).resolve().parents[1]
+    source = (project_root / "configs" / "gas_t5_hotels.yaml").read_text(encoding="utf-8")
+    relocated = tmp_path / "experiment.yaml"
+    relocated.write_text(source, encoding="utf-8")
+
+    config = load_config(relocated)
+
+    assert config["_project_root"] == tmp_path
+    assert config["paths"]["processed_data"] == tmp_path / "data" / "processed"
