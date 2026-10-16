@@ -36,6 +36,14 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     return records
 
 
+def _record_identity(record: dict[str, Any]) -> dict[str, Any]:
+    return {
+        field: record[field]
+        for field in ("review_id", "sentence_id", "source_line_number")
+        if record.get(field) is not None
+    }
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -286,8 +294,7 @@ def run_evaluation(config_path: str | Path, checkpoint: str | Path, split: str =
             normalized_gold = [q.to_dict() if hasattr(q, "to_dict") else _quadruple_dict(q) for q in gold]
             normalized_prediction = [_quadruple_dict(q) for q in parsed.quadruples]
             case = {
-                "review_id": record.get("review_id"),
-                "sentence_id": record.get("sentence_id"),
+                **_record_identity(record),
                 "text": record.get("text", ""),
                 "gold_quadruples": gold,
                 "predicted_quadruples": parsed.quadruples,
@@ -296,8 +303,7 @@ def run_evaluation(config_path: str | Path, checkpoint: str | Path, split: str =
             }
             cases.append(case)
             prediction_rows.append({
-                "review_id": record.get("review_id"),
-                "sentence_id": record.get("sentence_id"),
+                **_record_identity(record),
                 "text": record.get("text", ""),
                 "gold_quadruples": normalized_gold,
                 "raw_generation": raw_generation,
@@ -307,8 +313,7 @@ def run_evaluation(config_path: str | Path, checkpoint: str | Path, split: str =
             })
             for invalid in parsed.invalid_predictions:
                 invalid_rows.append({
-                    "review_id": record.get("review_id"),
-                    "sentence_id": record.get("sentence_id"),
+                    **_record_identity(record),
                     "text": record.get("text", ""),
                     "raw_generation": raw_generation,
                     **invalid,

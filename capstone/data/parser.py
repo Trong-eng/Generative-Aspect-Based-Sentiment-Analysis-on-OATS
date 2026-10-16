@@ -24,6 +24,8 @@ class DataIssue:
     sentence_id: str | None = None
     quadruple: dict[str, object] | None = None
     details: str | None = None
+    source_path: str | None = None
+    source_line_number: int | None = None
 
     def to_dict(self) -> dict[str, object]:
         value: dict[str, object] = {"reason": self.reason}
@@ -35,6 +37,10 @@ class DataIssue:
             value["quadruple"] = self.quadruple
         if self.details is not None:
             value["details"] = self.details
+        if self.source_path is not None:
+            value["source_path"] = self.source_path
+        if self.source_line_number is not None:
+            value["source_line_number"] = self.source_line_number
         return value
 
 

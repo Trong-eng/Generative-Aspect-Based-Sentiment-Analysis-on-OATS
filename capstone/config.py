@@ -7,7 +7,7 @@ from typing import Any
 
 
 DOMAINS = {"amazon_ff", "coursera", "hotels"}
-SPLIT_MODES = {"original_split", "clean_split"}
+SPLIT_MODES = {"original_split", "clean_split", "provided_split"}
 SENTIMENT_MODES = {"raw_4_class", "paper_compatible"}
 MODEL_TYPES = {"gas", "paraphrase"}
 
@@ -119,6 +119,10 @@ def validate_config(config: dict[str, Any]) -> list[str]:
             errors.append(
                 "cleaning.remove_unannotated_reviews must be true when a manifest is configured"
             )
+        if experiment.get("split_mode") == "provided_split" and (
+            remove_unannotated or manifest is not None
+        ):
+            errors.append("provided_split cannot use review-level annotation manifests")
     training = config.get("training")
     sequence = config.get("sequence")
     generation = config.get("generation")

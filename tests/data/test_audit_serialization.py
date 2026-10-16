@@ -96,7 +96,7 @@ def test_jsonl_round_trip_and_preparation_metadata(tmp_path):
     for split_name in ("train", "dev", "test"):
         actual = hashlib.sha256(paths[split_name].read_bytes()).hexdigest()
         assert metadata["split_fingerprints"][split_name] == actual
-    row = next(read_jsonl(paths["train"]))
+    row = read_jsonl(paths["train"])[0]
     assert row.review_id == "r1"
 
 

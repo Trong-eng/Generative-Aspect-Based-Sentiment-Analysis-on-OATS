@@ -209,11 +209,11 @@ def _record_issue_case(
     raw_generation: Any,
     invalid_predictions: Any = _MISSING,
 ) -> dict[str, Any]:
-    result: dict[str, Any] = {
-        "review_id": _json_safe(_get(record, "review_id", None)),
-        "sentence_id": _json_safe(_get(record, "sentence_id", None)),
-        "issues": [_issue_dict(issue) for issue in issues],
-    }
+    result: dict[str, Any] = {"issues": [_issue_dict(issue) for issue in issues]}
+    for field in ("review_id", "sentence_id", "source_line_number"):
+        value = _get(record, field, _MISSING)
+        if value is not _MISSING and value is not None:
+            result[field] = _json_safe(value)
     text = _get(record, "text", _MISSING)
     if text is not _MISSING:
         result["text"] = _json_safe(text)
@@ -458,21 +458,42 @@ def evaluate_records(
                 implicit_target_failures.append(mismatch)
             if mismatch.get("implicit_opinion_failure"):
                 implicit_opinion_failures.append(mismatch)
+        # A quadruple already reported inside `mismatches` must not be counted again as an
+        # implicit failure. Target and opinion are tracked separately because each branch
+        # consumes its own pairing budget.
+        def _paired_counter(side: str) -> Counter:
+            return Counter(
+                tuple(mismatch[side][field] for field in _COMPONENTS) for mismatch in mismatches
+            )
+
+        paired_gold_target = _paired_counter("gold")
+        paired_gold_opinion = _paired_counter("gold")
+        paired_predicted_target = _paired_counter("predicted")
+        paired_predicted_opinion = _paired_counter("predicted")
+
+        def _consume(counter: Counter, key: tuple[str, ...]) -> bool:
+            if counter[key]:
+                counter[key] -= 1
+                return True
+            return False
+
         for item in false_negatives:
-            if _is_implicit(item.target):
+            key = _quadruple_key(item)
+            if not _consume(paired_gold_target, key) and _is_implicit(item.target):
                 implicit_target_failures.append(
                     {"gold": _quadruple_dict(item), "predicted": None, "reason": "missed_implicit"}
                 )
-            if _is_implicit(item.opinion):
+            if not _consume(paired_gold_opinion, key) and _is_implicit(item.opinion):
                 implicit_opinion_failures.append(
                     {"gold": _quadruple_dict(item), "predicted": None, "reason": "missed_implicit"}
                 )
         for item in false_positives:
-            if _is_implicit(item.target):
+            key = _quadruple_key(item)
+            if not _consume(paired_predicted_target, key) and _is_implicit(item.target):
                 implicit_target_failures.append(
                     {"gold": None, "predicted": _quadruple_dict(item), "reason": "spurious_implicit"}
                 )
-            if _is_implicit(item.opinion):
+            if not _consume(paired_predicted_opinion, key) and _is_implicit(item.opinion):
                 implicit_opinion_failures.append(
                     {"gold": None, "predicted": _quadruple_dict(item), "reason": "spurious_implicit"}
                 )

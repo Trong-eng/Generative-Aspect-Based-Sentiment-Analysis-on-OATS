@@ -1,7 +1,7 @@
 experiment:
   name: paraphrase_t5_hotels_seed42
   domain: hotels
-  split_mode: clean_split
+  split_mode: provided_split
   seed: 42
 
 model:
@@ -31,11 +31,11 @@ generation:
   early_stopping: false
 
 dataset:
-  version: oats_xml_v1
+  version: oats_provided_txt_v1
   sentiment_mode: paper_compatible
 
 cleaning:
-  version: review_level_clean_v1
+  version: source_row_clean_v1
   remove_unannotated_reviews: false
   unannotated_reviews_manifest: null
   invalid_aspect_policy: drop_and_log

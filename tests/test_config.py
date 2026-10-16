@@ -125,13 +125,14 @@ def test_repository_ships_a_complete_unique_three_domain_config_matrix():
             assert config["experiment"] == {
                 "name": expected_experiment,
                 "domain": domain,
-                "split_mode": "clean_split",
+                "split_mode": "provided_split",
                 "seed": 42,
             }
             assert config["model"]["type"] == model_type
             assert config["dataset"]["sentiment_mode"] == "paper_compatible"
+            assert config["dataset"]["version"] == "oats_provided_txt_v1"
             assert Path(config["paths"]["processed_data"]).name == "processed"
-            assert Path(config["paths"]["output_dir]).name == expected_experiment
+            assert Path(config["paths"]["output_dir"]).name == expected_experiment
             experiment_names.add(config["experiment"]["name"])
             output_directories.add(config["paths"]["output_dir"])
             paired.append(config)
@@ -161,3 +162,25 @@ def test_validate_config_accepts_every_supported_domain(domain):
     }
 
     assert validate_config(config) == []
+
+
+def test_repository_keeps_a_clean_split_config_outside_the_reported_matrix():
+    """The six reported configs use provided_split, where review-level leakage cannot be
+    checked. Keep at least one clean_split config loadable so the primary protocol and its
+    leakage guard stay exercised, with its own processed root and output directory."""
+    project_root = Path(__file__).resolve().parents[1]
+    clean_split_paths = sorted((project_root / "configs" / "clean_split").glob("*.yaml"))
+
+    assert clean_split_paths, "expected at least one clean_split config"
+
+    matrix_output_dirs = {
+        load_config(path)["paths"]["output_dir"]
+        for path in (project_root / "configs").glob("*_t5_*.yaml")
+    }
+    for path in clean_split_paths:
+        config = load_config(path)
+        assert config["experiment"]["split_mode"] == "clean_split"
+        assert config["dataset"]["version"] == "oats_xml_v1"
+        assert config["cleaning"]["version"] == "review_level_clean_v1"
+        assert config["paths"]["output_dir"] not in matrix_output_dirs
+        assert Path(config["paths"]["processed_data"]).name != "processed"

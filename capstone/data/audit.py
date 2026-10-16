@@ -6,7 +6,7 @@ from collections import Counter
 from typing import Iterable, Mapping
 
 from capstone.data.parser import DataIssue
-from capstone.types import ReviewRecord
+from capstone.types import ReviewRecord, SentenceRecord
 
 
 ZERO_LABEL_STATUSES = (
@@ -126,6 +126,59 @@ def audit_reviews(
         "zero_label_review_status_counts": dict(status_counts),
         "zero_label_sentence_status_counts": dict(sentence_status_counts),
         "zero_label_review_status_by_id": dict(sorted(statuses.items())),
+    }
+    if split is not None:
+        result["split"] = split
+    return result
+
+
+def audit_sentence_rows(
+    rows: Iterable[SentenceRecord],
+    *,
+    issues: Iterable[DataIssue] = (),
+    split: str | None = None,
+) -> dict[str, object]:
+    """Count source split rows without inventing review-level identities."""
+    row_list = list(rows)
+    issue_list = list(issues)
+    if any(row.review_id is not None or row.sentence_id is not None for row in row_list):
+        raise ValueError("provided split audit must not receive review_id or sentence_id")
+    if any(row.source_line_number is None for row in row_list):
+        raise ValueError("provided split audit requires source_line_number on every row")
+
+    quadruples = [quadruple for row in row_list for quadruple in row.quadruples]
+    aspect_counts = Counter(quadruple.aspect for quadruple in quadruples)
+    sentiment_counts = Counter(quadruple.sentiment for quadruple in quadruples)
+    invalid_category_count = sum(
+        1
+        for quadruple in quadruples
+        if quadruple.aspect.strip().casefold().replace("_", " ").startswith("polarity")
+    )
+    result: dict[str, object] = {
+        "number_of_source_rows": len(row_list),
+        "number_of_sentences": len(row_list),
+        "sentences_with_quadruples": sum(bool(row.quadruples) for row in row_list),
+        "empty_label_sentences": sum(not row.quadruples for row in row_list),
+        "number_of_quadruples": len(quadruples),
+        "explicit_target_count": sum(not _is_null(quadruple.target) for quadruple in quadruples),
+        "implicit_target_count": sum(_is_null(quadruple.target) for quadruple in quadruples),
+        "explicit_opinion_count": sum(not _is_null(quadruple.opinion) for quadruple in quadruples),
+        "implicit_opinion_count": sum(_is_null(quadruple.opinion) for quadruple in quadruples),
+        "aspect_distribution": dict(sorted(aspect_counts.items())),
+        "sentiment_distribution": dict(sorted(sentiment_counts.items())),
+        "malformed_quadruple_count": sum(
+            issue.reason == "malformed_quadruple" for issue in issue_list
+        ),
+        "invalid_category_count": max(
+            invalid_category_count,
+            sum(issue.reason == "invalid_aspect_category" for issue in issue_list),
+        ),
+        "suspicious_annotation_count": sum(
+            issue.reason == "suspicious_annotation" for issue in issue_list
+        ),
+        "malformed_sentence_count": sum(not row.text.strip() for row in row_list)
+        + sum(issue.reason == "malformed_sentence" for issue in issue_list),
+        "issue_counts": dict(sorted(Counter(issue.reason for issue in issue_list).items())),
     }
     if split is not None:
         result["split"] = split
