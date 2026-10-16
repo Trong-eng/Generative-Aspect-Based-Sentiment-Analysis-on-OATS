@@ -51,6 +51,29 @@ def _counts(gold: Iterable[Quadruple], predicted: Iterable[Quadruple]) -> tuple[
     return tp, sum(predicted_counts.values()) - tp, sum(gold_counts.values()) - tp
 
 
+def _projected_counts(
+    gold: Iterable[Quadruple],
+    predicted: Iterable[Quadruple],
+    fields: tuple[str, ...],
+) -> tuple[int, int, int]:
+    """Duplicate-safe TP/FP/FN after projecting each quadruple onto `fields`."""
+    def key(item: Quadruple) -> tuple[str, ...]:
+        return tuple(getattr(item, field) for field in fields)
+
+    gold_counts = Counter(key(item) for item in gold)
+    predicted_counts = Counter(key(item) for item in predicted)
+    tp = sum((gold_counts & predicted_counts).values())
+    return tp, sum(predicted_counts.values()) - tp, sum(gold_counts.values()) - tp
+
+
+#: Relaxed views reported next to the exact-match score. `aspect_sentiment` is what an
+#: aspect-level dashboard actually consumes: it ignores the target and opinion strings.
+_RELAXED_VIEWS: dict[str, tuple[str, ...]] = {
+    "aspect": ("aspect",),
+    "aspect_sentiment": ("aspect", "sentiment"),
+}
+
+
 def evaluate_quadruples(
     gold: Iterable[Any] | None,
     predicted: Iterable[Any] | None,
@@ -317,6 +340,7 @@ def evaluate_records(
     if known_aspects is not None and not isinstance(known_aspects, str):
         known_aspects = tuple(known_aspects)
     exact_counts = [0, 0, 0]
+    relaxed_counts: dict[str, list[int]] = {view: [0, 0, 0] for view in _RELAXED_VIEWS}
     component_counts: dict[str, list[int]] = {name: [0, 0, 0] for name in _COMPONENTS}
     component_accuracy_counts = {name: [0, 0] for name in ("aspect", "sentiment")}
     explicitness_counts: dict[str, dict[str, list[int]]] = {
@@ -382,6 +406,8 @@ def evaluate_records(
 
         case_counts = _counts(gold, predicted)
         _add_counts(exact_counts, case_counts)
+        for view, fields in _RELAXED_VIEWS.items():
+            _add_counts(relaxed_counts[view], _projected_counts(gold, predicted, fields))
         tp, fp, fn = case_counts
         if tp == len(gold) == len(predicted):
             exact_match_examples += 1
@@ -567,7 +593,19 @@ def evaluate_records(
             "accuracy": accuracy,
         }
 
+    relaxed_metrics: dict[str, Any] = {
+        "definition": (
+            "Micro P/R/F1 after projecting each quadruple onto a subset of its fields: "
+            "'aspect' ignores target, opinion and sentiment; 'aspect_sentiment' ignores "
+            "target and opinion. These are looser than the exact-match score the paper "
+            "reports, and must never be presented as the ASQP result. They measure what an "
+            "aspect-level sentiment dashboard actually consumes."
+        ),
+        **{view: _scores(*relaxed_counts[view]) for view in _RELAXED_VIEWS},
+    }
+
     diagnostics: dict[str, Any] = {
+        "relaxed": relaxed_metrics,
         "components": component_metrics,
         "component_accuracy": component_accuracy,
         "explicit_implicit": {

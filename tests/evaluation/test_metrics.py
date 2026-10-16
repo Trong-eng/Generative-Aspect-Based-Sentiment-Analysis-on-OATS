@@ -321,3 +321,54 @@ def test_implicit_opinion_mismatch_keeps_any_unpaired_duplicate(gold, predicted,
     failures = errors[0]["implicit_opinion_failures"]
     assert sum("wrong_fields" in failure for failure in failures) == 1
     assert [failure.get("reason") for failure in failures if "reason" in failure] == [unpaired_reason]
+
+
+def test_relaxed_aspect_sentiment_metrics_ignore_target_and_opinion():
+    """The dashboard aggregates (aspect, sentiment) pairs, so report that view too:
+    a prediction with the right aspect and sentiment but a wrong target/opinion is
+    exact-match wrong, yet correct for the dashboard."""
+    gold = q("room", "ROOMS#CLEANLINESS", "dirty", "negative")
+    predicted = q("bathroom", "ROOMS#CLEANLINESS", "filthy", "negative")
+
+    metrics, diagnostics, _ = evaluate_records(
+        [{"gold_quadruples": [gold], "predicted_quadruples": [predicted]}]
+    )
+
+    assert metrics["f1"] == 0.0
+    assert diagnostics["relaxed"]["aspect_sentiment"]["f1"] == 1.0
+    assert diagnostics["relaxed"]["aspect"]["f1"] == 1.0
+    assert "never be presented as the ASQP result" in diagnostics["relaxed"]["definition"]
+
+
+def test_relaxed_aspect_metric_separates_aspect_errors_from_sentiment_errors():
+    gold = [q("room", "ROOMS#CLEANLINESS", "dirty", "negative")]
+    predicted = [q("room", "ROOMS#CLEANLINESS", "dirty", "positive")]
+
+    _, diagnostics, _ = evaluate_records([{"gold_quadruples": gold, "predicted_quadruples": predicted}])
+
+    # Right aspect, wrong sentiment: the aspect view is satisfied, the pair view is not.
+    assert diagnostics["relaxed"]["aspect"]["f1"] == 1.0
+    assert diagnostics["relaxed"]["aspect_sentiment"] == {
+        "tp": 0,
+        "fp": 1,
+        "fn": 1,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+    }
+
+
+def test_relaxed_metrics_are_duplicate_safe_and_aggregate_over_records():
+    pair = ("SERVICE#GENERAL", "negative")
+    gold = [q("staff", pair[0], "rude", pair[1]), q("waiter", pair[0], "slow", pair[1])]
+    predicted = [q("staff", pair[0], "rude", pair[1])]
+
+    _, diagnostics, _ = evaluate_records(
+        [
+            {"gold_quadruples": gold, "predicted_quadruples": predicted},
+            {"gold_quadruples": [], "predicted_quadruples": [q("x", "FOOD#QUALITY", "ok", "neutral")]},
+        ]
+    )
+
+    relaxed = diagnostics["relaxed"]["aspect_sentiment"]
+    assert (relaxed["tp"], relaxed["fp"], relaxed["fn"]) == (1, 1, 1)
