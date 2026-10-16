@@ -1,0 +1,65 @@
+# Review-level protocol kept green alongside the six provided_split configs.
+#
+# The seed-42 result matrix in configs/ uses `provided_split` (the dataset's own TXT splits),
+# where review IDs do not exist and `assert_no_review_leakage` cannot run. This config keeps
+# the project's primary guarantee — a review-level split with the leakage guard — exercised
+# and reproducible. It is NOT part of the reported six-run matrix: it writes to its own
+# processed root and output directory, so its numbers must be reported separately.
+#
+# Prepare its data with:
+#   python -m capstone.prepare_data --domain amazon_ff --split-mode clean_split --seed 42 \
+#     --sentiment-mode paper_compatible --raw-root OATS-ABSA-Dataset/data \
+#     --output-root data/processed_clean_split
+experiment:
+  name: gas_t5_amazon_ff_clean_split_seed42
+  domain: amazon_ff
+  split_mode: clean_split
+  seed: 42
+
+model:
+  type: gas
+  target_format: extraction_style_quadruple_json
+  model_name: t5-base
+  tokenizer_name: t5-base
+
+training:
+  epochs: 20
+  batch_size: 16
+  gradient_accumulation_steps: 1
+  learning_rate: 0.0003
+  weight_decay: 0.0
+  warmup_ratio: 0.0
+  optimizer: AdamW
+  scheduler: linear
+  max_grad_norm: 1.0
+
+sequence:
+  max_input_length: 128
+  max_output_length: 128
+
+generation:
+  num_beams: 1
+  max_new_tokens: 128
+  early_stopping: false
+
+dataset:
+  version: oats_xml_v1
+  sentiment_mode: paper_compatible
+
+cleaning:
+  version: review_level_clean_v1
+  remove_unannotated_reviews: false
+  unannotated_reviews_manifest: null
+  invalid_aspect_policy: drop_and_log
+  conflict_policy: preserve
+
+evaluation:
+  batch_size: 16
+
+logging:
+  level: INFO
+
+paths:
+  raw_data: OATS-ABSA-Dataset/data
+  processed_data: data/processed_clean_split
+  output_dir: artifacts/experiments/gas_t5_amazon_ff_clean_split_seed42

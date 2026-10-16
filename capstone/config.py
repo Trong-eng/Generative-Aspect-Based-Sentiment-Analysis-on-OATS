@@ -21,8 +21,17 @@ def _require_yaml() -> Any:
 
 
 def _project_root(config_path: Path) -> Path:
+    """Project root for resolving relative paths in a config.
+
+    Configs may sit directly in `configs/` or in a subdirectory of it (for example
+    `configs/clean_split/`), so walk up to the `configs` directory and take its parent.
+    A config kept elsewhere resolves against its own directory.
+    """
     parent = config_path.parent
-    return parent.parent if parent.name == "configs" else parent
+    for candidate in (parent, *parent.parents):
+        if candidate.name == "configs":
+            return candidate.parent
+    return parent
 
 
 def load_config(path: str | Path) -> dict[str, Any]:
