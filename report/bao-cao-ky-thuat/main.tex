@@ -1,0 +1,774 @@
+% Báo cáo kỹ thuật: Phân tích ý kiến theo khía cạnh (ASQP) trên bộ dữ liệu OATS
+% Định dạng theo mẫu báo cáo Project III của Trường CNTT&TT, ĐHBK Hà Nội.
+% Biên dịch: xelatex main -> bibtex main -> xelatex main -> xelatex main
+%            (hoặc: latexmk -xelatex main.tex)
+\documentclass[12pt,a4paper]{report}
+
+% ============================================================================
+% PACKAGES
+% ============================================================================
+\usepackage{fontspec}
+\usepackage[vietnamese]{babel}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{listings}
+\usepackage{fancyvrb}
+\usepackage[table]{xcolor}
+\usepackage{hyperref}
+\usepackage{geometry}
+\usepackage{setspace}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{enumitem}
+\usepackage{url}
+\usepackage{tcolorbox}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,calc,fit,backgrounds}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+
+\geometry{margin=2.5cm}
+\onehalfspacing
+\graphicspath{{hinh/}}
+\setcounter{tocdepth}{2}
+\hypersetup{hidelinks}
+\setlist{itemsep=1pt,topsep=3pt}
+
+\newcommand{\enquote}[1]{“#1”}
+\newcommand{\code}[1]{\texttt{#1}}
+\renewcommand{\lstlistingname}{Đoạn mã}
+
+\definecolor{oatsblue}{RGB}{18,92,173}
+\definecolor{oatsgreen}{RGB}{46,140,87}
+\definecolor{oatsamber}{RGB}{214,140,20}
+\definecolor{oatsred}{RGB}{190,50,50}
+\definecolor{oatsgray}{RGB}{110,116,128}
+\definecolor{lightblue}{RGB}{228,239,252}
+\definecolor{lightgreen}{RGB}{224,244,232}
+\definecolor{lightamber}{RGB}{255,241,214}
+\definecolor{lightred}{RGB}{252,226,226}
+\definecolor{lightgray}{RGB}{242,243,245}
+
+\newtcolorbox{ghichu}[1]{colback=lightgray,colframe=black!55,boxrule=0.4pt,arc=0pt,
+  fonttitle=\bfseries,coltitle=black,colbacktitle=black!10,title=#1}
+
+\tikzset{
+  box/.style={draw=oatsblue,fill=lightblue,rounded corners=3pt,align=center,font=\small\sffamily,
+              minimum height=9mm,inner sep=4pt,text width=#1},
+  box/.default=30mm,
+  gbox/.style={box=#1,draw=oatsgreen,fill=lightgreen},
+  gbox/.default=30mm,
+  abox/.style={box=#1,draw=oatsamber,fill=lightamber},
+  abox/.default=30mm,
+  rbox/.style={box=#1,draw=oatsred,fill=lightred},
+  rbox/.default=30mm,
+  db/.style={cylinder,shape border rotate=90,aspect=0.18,draw=oatsblue,fill=lightblue,
+             align=center,font=\small\sffamily,minimum height=13mm,text width=24mm},
+  arr/.style={-{Stealth[length=2.6mm]},thick,color=oatsgray},
+  lab/.style={font=\scriptsize\sffamily,color=oatsgray,fill=white,inner sep=1pt},
+}
+
+\begin{document}
+
+% ============================================================================
+% TRANG BÌA
+% ============================================================================
+\begin{titlepage}
+\begin{center}
+
+\textsc{\large \textbf{ĐẠI HỌC BÁCH KHOA HÀ NỘI}}\\[0.5cm]
+
+{\Large TRƯỜNG CÔNG NGHỆ THÔNG TIN VÀ TRUYỀN THÔNG \\[1cm]}
+
+\includegraphics[scale=0.13]{logo-soict-hust-1.png}\\[1cm]
+\textsc{\Large \textbf{Báo cáo kỹ thuật}}\\[0.4cm]
+
+\rule{\linewidth}{0.7mm} \\[0.4cm]
+{\huge \bfseries Phân tích ý kiến theo khía cạnh\\[0.2cm] trên bộ dữ liệu OATS:\\[0.2cm] từ pipeline sinh quadruple\\[0.2cm] đến dashboard cho doanh nghiệp\\[0.4cm]}
+{\large Đề tài: Generative Aspect-Based Sentiment Analysis on OATS\\[0.3cm]}
+\rule{\linewidth}{0.7mm} \\[1cm]
+
+{\large \textbf{Nhóm thực hiện:}}\\[0.6cm]
+\begin{tabular}{ll}
+\large Trọng & \large Pipeline lõi, cấu hình thí nghiệm, hướng dẫn chạy \\[0.2cm]
+\large Thanh & \large Thực thi lượt chạy seed 42 trên ba lĩnh vực \\[0.2cm]
+\large Nhân & \large Giao diện web, dashboard khía cạnh, service dự đoán \\[0.6cm]
+\end{tabular}
+
+\vfill
+
+{\large \textbf{Hà Nội - Việt Nam}\\[0.2cm] \color{blue!90!black}2026}
+
+\end{center}
+\end{titlepage}
+\setstretch{1.5}
+
+\pagenumbering{roman}
+
+\tableofcontents
+\newpage
+
+\begin{abstract}
+Một khách sạn nhận hàng nghìn nhận xét và thấy điểm trung bình giảm, nhưng điểm số đó không cho biết khách đang phàn nàn
+về điều gì. Bài toán \textit{Aspect Sentiment Quad Prediction} (ASQP) tách mỗi ý kiến trong câu thành bộ bốn thành phần
+\emph{(đối tượng, khía cạnh, cụm ý kiến, cảm xúc)}, nhờ đó có thể tổng hợp theo từng khía cạnh thay vì theo một điểm chung.
+
+Báo cáo trình bày toàn bộ hệ thống nhóm đã xây dựng quanh bộ dữ liệu OATS~\cite{oats2024}: một pipeline nghiên cứu
+(đọc dữ liệu, làm sạch, chia tập, huấn luyện, đánh giá, phân tích lỗi) cho hai mô hình sinh GAS~\cite{gas2021} và
+Paraphrase~\cite{paraphrase2021} trên ba lĩnh vực; một service HTTP bọc checkpoint đã huấn luyện; và một giao diện web
+gồm hai phần: phân tích một câu, và dashboard nhận vào một tệp nhiều nhận xét rồi cho biết mỗi khía cạnh có bao nhiêu
+phần trăm nhận xét tiêu cực, kèm các cụm từ chê phổ biến.
+
+Lượt chạy seed 42 trên ba lĩnh vực cho F1 khớp hoàn toàn trên tập test lần lượt là 0{,}227 / 0{,}111 / 0{,}347 với GAS và
+0{,}210 / 0{,}144 / 0{,}389 với Paraphrase. Báo cáo chỉ ra một đặc điểm của bộ dữ liệu làm các con số này không so sánh
+trực tiếp được với bài báo: trong tập test có sẵn, 80{,}8\% dòng của \code{coursera} và 86{,}7\% dòng của \code{hotels}
+không có nhãn nào, trong khi tỷ lệ này ở tập train chỉ khoảng 25\%. Phần kiểm thử gồm 150 test Python và 98 test
+frontend; luồng web đã được chạy thật đầu-cuối qua HTTP. Những phần chưa làm --- chạy đa seed, chạy lại theo giao thức
+chia tập cấp bài đánh giá, và đo độ chính xác riêng cho cặp (khía cạnh, cảm xúc) mà dashboard dựa vào --- được nêu rõ ở
+Chương~\ref{chap:ketluan} thay vì được suy đoán.
+\end{abstract}
+
+\chapter*{Danh mục thuật ngữ và viết tắt}
+\addcontentsline{toc}{chapter}{Danh mục thuật ngữ và viết tắt}
+\begin{tabularx}{\linewidth}{@{}lX@{}}
+\toprule
+\textbf{Viết tắt} & \textbf{Nghĩa} \\ \midrule
+ABSA & Aspect-Based Sentiment Analysis: phân tích cảm xúc theo khía cạnh \\
+ASQP & Aspect Sentiment Quad Prediction: dự đoán bộ bốn (target, aspect, opinion, sentiment) \\
+Quadruple & Bộ bốn thành phần của một ý kiến trong câu \\
+Target & Đối tượng được nhắc tới; \code{NULL} nếu chỉ được ngầm hiểu \\
+Aspect (category) & Khía cạnh, lấy từ danh mục cố định của từng lĩnh vực, ví dụ \code{rooms cleanliness} \\
+Opinion & Cụm từ thể hiện ý kiến; \code{NULL} nếu ngầm hiểu \\
+Sentiment & Một trong bốn nhãn: positive, negative, neutral, conflict \\
+OATS & Opinion Aspect Target Sentiment, bộ dữ liệu của bài báo~\cite{oats2024} \\
+GAS & Generative ABSA, sinh chuỗi theo kiểu trích xuất~\cite{gas2021} \\
+Paraphrase & Sinh câu diễn giải tự nhiên cho mỗi quadruple~\cite{paraphrase2021} \\
+T5 & Text-to-Text Transfer Transformer, mô hình nền dùng cho cả hai phương pháp~\cite{t5} \\
+Exact match & Một dự đoán chỉ đúng khi cả bốn thành phần khớp chính xác \\
+Leakage & Rò rỉ: các câu của cùng một bài đánh giá nằm ở nhiều tập khác nhau \\
+Fingerprint & Mã băm SHA-256 của tệp dữ liệu, dùng để phát hiện dữ liệu đổi \\
+Mock mode & Chế độ giao diện chạy bằng dữ liệu mẫu, không gọi mô hình \\
+\bottomrule
+\end{tabularx}
+
+\newpage
+\pagenumbering{arabic}
+
+% ============================================================================
+\chapter{Giới thiệu}
+
+\section{Đặt vấn đề}
+
+Khi một doanh nghiệp nhìn vào điểm đánh giá trung bình, họ biết \emph{có} vấn đề nhưng không biết vấn đề \emph{nằm ở đâu}.
+Câu \enquote{Vị trí tuyệt vời, nhưng phòng bẩn và nhân viên thiếu nhiệt tình} vừa khen vừa chê; gộp thành một điểm sao sẽ
+mất toàn bộ thông tin hành động được. Phân tích cảm xúc ở mức câu cũng không đủ, vì một câu có thể chứa nhiều ý kiến trái
+chiều về nhiều đối tượng khác nhau.
+
+ASQP giải quyết đúng chỗ thiếu đó: mỗi ý kiến được tách thành bộ bốn thành phần. Với câu trên, kết quả mong muốn là hai
+bộ: \code{(location, location general, "Great", positive)} và \code{(room, rooms cleanliness, "dirty", negative)}.
+Khi đã có các bộ bốn này cho hàng nghìn nhận xét, việc tổng hợp \enquote{khía cạnh nào bị chê nhiều nhất} trở thành phép
+đếm, và quan trọng hơn, có thể chỉ ra \emph{vì sao} bị chê thông qua các cụm ý kiến đi kèm.
+
+Bộ dữ liệu OATS~\cite{oats2024} được công bố năm 2024 cho ba lĩnh vực: đánh giá thực phẩm trên Amazon, đánh giá khóa học
+trực tuyến Coursera và đánh giá khách sạn TripAdvisor. Điểm khiến OATS khó hơn các bộ ABSA trước đó là nó gán nhãn ở mức
+bài đánh giá nhiều câu, giữ cả các câu không mang ý kiến, và cho phép cả đối tượng lẫn cụm ý kiến ở dạng ngầm hiểu.
+
+\section{Mục tiêu}
+
+Nhóm đặt ba mục tiêu, theo thứ tự ưu tiên:
+
+\begin{enumerate}
+  \item \textbf{Một pipeline nghiên cứu trung thực.} Chuẩn bị dữ liệu, huấn luyện, đánh giá và phân tích lỗi cho hai mô
+        hình sinh trên ba lĩnh vực, trong đó mọi thao tác đều để lại dấu vết kiểm chứng được: nguồn dữ liệu, mã băm, cấu
+        hình, danh mục khía cạnh.
+  \item \textbf{Kết quả thực nghiệm có điều kiện rõ ràng.} Báo cáo số liệu theo từng cặp (lĩnh vực, mô hình), không gộp
+        ba lĩnh vực, không thay số của nhóm bằng số của bài báo, và nói rõ giao thức chia tập nào đã được dùng.
+  \item \textbf{Một sản phẩm dùng được.} Giao diện web cho phép phân tích một câu và, quan trọng hơn với doanh nghiệp,
+        tải lên một tệp nhiều nhận xét để biết khía cạnh nào đang yếu.
+\end{enumerate}
+
+\section{Phạm vi và đóng góp}
+
+\subsection{Phạm vi}
+
+Báo cáo giới hạn ở hai phương pháp sinh là GAS và Paraphrase trên nền T5-base, ba lĩnh vực của OATS và dữ liệu tiếng Anh.
+Các phương pháp khác được nhắc tới trong phần khảo sát để đối chiếu, không được cài đặt lại. Hệ thống phục vụ hiện dành
+cho chạy nội bộ: không có xác thực người dùng, không có giới hạn tần suất.
+
+\subsection{Đóng góp}
+
+\begin{itemize}
+  \item Pipeline đầy đủ với ba giao thức chia tập (\code{clean\_split} theo bài đánh giá, \code{original\_split} căn
+        chỉnh với XML, \code{provided\_split} dùng thẳng tệp chia sẵn) và cơ chế kiểm tra dấu vân tay dữ liệu xuyên suốt
+        từ chuẩn bị dữ liệu đến đánh giá và so sánh.
+  \item Lượt chạy seed 42 hoàn chỉnh: 6 lần huấn luyện, 6 lần đánh giá, 3 lần so sánh cùng lĩnh vực, 6 lần phân tích lỗi.
+  \item Phát hiện và ghi nhận một đặc điểm dữ liệu ảnh hưởng trực tiếp tới việc diễn giải kết quả: tỷ lệ dòng không nhãn
+        trong tập test chia sẵn của \code{coursera} và \code{hotels} cao bất thường (Mục~\ref{sec:nhanrong}).
+  \item Service HTTP và giao diện web, trong đó có dashboard tổng hợp theo khía cạnh ở mức bài đánh giá, kèm quy tắc đếm
+        được định nghĩa tường minh và công bố ngay trên giao diện.
+  \item Bộ kiểm thử tự động 150 test Python và 98 test frontend, cùng một lần kiểm chứng đầu-cuối chạy thật qua HTTP.
+\end{itemize}
+
+\section{Cấu trúc báo cáo}
+
+Chương~\ref{chap:cosoly} trình bày cơ sở lý thuyết và khảo sát các phương pháp liên quan. Chương~\ref{chap:yeucau} phân
+tích yêu cầu. Chương~\ref{chap:thietke} mô tả kiến trúc và các quyết định thiết kế. Chương~\ref{chap:trienkhai} đi vào
+chi tiết triển khai. Chương~\ref{chap:ketqua} trình bày kết quả thực nghiệm, kiểm thử và các giới hạn đã xác định.
+Chương~\ref{chap:ketluan} kết luận và nêu hướng phát triển.
+
+% ============================================================================
+\chapter{Cơ sở lý thuyết và khảo sát}
+\label{chap:cosoly}
+
+\section{Bài toán ASQP}
+
+Cho một câu $s$, mô hình phải sinh ra tập các bộ bốn
+\[
+Q(s) = \{(t_i, a_i, o_i, p_i)\}_{i=1}^{n},
+\]
+trong đó $t_i$ là đối tượng, $a_i$ là khía cạnh lấy từ danh mục cố định của lĩnh vực, $o_i$ là cụm từ thể hiện ý kiến, và
+$p_i$ là cảm xúc. Cả $t_i$ và $o_i$ có thể mang giá trị \code{NULL} khi chỉ được ngầm hiểu. Số bộ $n$ có thể bằng 0 với
+câu không chứa ý kiến.
+
+Chỉ số đánh giá là precision, recall và F1 theo \emph{khớp hoàn toàn}: một dự đoán chỉ được tính đúng khi cả bốn thành
+phần trùng khớp. Đây là tiêu chí nghiêm ngặt --- đoán đúng ba trên bốn thành phần vẫn bị tính sai hoàn toàn --- và là lý
+do các con số F1 trong lĩnh vực này thấp hơn nhiều so với bài toán phân loại cảm xúc thông thường.
+
+\section{Bộ dữ liệu OATS}
+
+Bảng~\ref{tab:dulieu} thống kê dữ liệu thô do nhóm đo trực tiếp từ các tệp XML của bộ dữ liệu.
+
+\begin{table}[H]
+\centering
+\caption{Quy mô dữ liệu OATS, đo bằng chính bộ đọc XML của dự án.}
+\label{tab:dulieu}
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{Lĩnh vực} & \textbf{Bài đánh giá} & \textbf{Câu} & \textbf{Câu không nhãn} & \textbf{Số khía cạnh} \\
+\midrule
+\code{amazon\_ff} & 1.850 & 9.200 & 2.613 (28,4\%) & 13 \\
+\code{coursera}   & 1.850 & 8.985 & 2.825 (31,4\%) & 30 \\
+\code{hotels}     & 1.847 & 9.793 & 3.182 (32,5\%) & 37 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Hai đặc điểm của bộ dữ liệu ảnh hưởng trực tiếp tới thiết kế hệ thống:
+
+\begin{itemize}
+  \item \textbf{Phân bố nhãn lệch mạnh.} Khoảng 78--83\% quadruple mang nhãn positive, 15--18\% negative, chỉ 2--4\%
+        neutral, và nhãn thứ tư \code{conflict} xuất hiện rất hiếm (5--6 lần trên mỗi lĩnh vực). Hệ quả là mọi con số
+        liên quan tới neutral và conflict đều dựa trên rất ít ví dụ.
+  \item \textbf{Nhãn gắn ở mức bài đánh giá.} Một bài gồm nhiều câu; nếu chia tập ở mức câu thì các câu của cùng một bài
+        sẽ nằm ở cả tập train lẫn test. Dự án vì vậy coi \emph{không rò rỉ ở mức bài đánh giá} là một ràng buộc cần được
+        kiểm tra bằng mã, không phải một giả định.
+\end{itemize}
+
+\section{Hai phương pháp sinh được cài đặt}
+
+\subsection{Paraphrase}
+
+Phương pháp Paraphrase~\cite{paraphrase2021} biến mỗi quadruple thành một câu tiếng Anh tự nhiên theo khuôn
+\enquote{\textit{aspect} is \textit{phrase} because \textit{target} is \textit{opinion}}, trong đó cảm xúc được ánh xạ
+thành một tính từ: positive $\rightarrow$ \code{great}, negative $\rightarrow$ \code{bad}, neutral $\rightarrow$ \code{ok}.
+Nhiều quadruple trong một câu được nối bằng dấu phân cách \code{[SSEP]}. Đối tượng hoặc ý kiến ngầm hiểu được viết là
+\code{it}. Ưu điểm là chuỗi đích gần với phân bố ngôn ngữ mà T5 đã học trong giai đoạn tiền huấn luyện.
+
+OATS có nhãn thứ tư là \code{conflict}, không nằm trong ba tính từ của bài báo gốc. Dự án mở rộng bằng từ \code{mixed} và
+ghi rõ đây là lựa chọn của nhóm, không phải thiết lập của bài báo.
+
+\subsection{GAS}
+
+Bài báo GAS~\cite{gas2021} trình bày hai kiểu sinh cho các bài toán ABSA, trong đó có kiểu trích xuất. Bài báo OATS áp
+dụng GAS cho ASQP nhưng \emph{không công bố} cú pháp chuỗi đích cụ thể. Dự án vì vậy chọn một biểu diễn trích xuất có
+cấu trúc: mảng JSON gồm các bộ bốn chuỗi theo thứ tự cố định.
+
+\begin{ghichu}{Ranh giới cần giữ}
+Vì cú pháp đích của GAS-T5 trong bài báo OATS không được công bố, kết quả GAS trong báo cáo này là của \emph{một cách
+triển khai theo hướng trích xuất do nhóm chọn}, không phải tái tạo chính xác thí nghiệm của bài báo. Mọi so sánh với
+cột GAS-T5 trong bài báo phải kèm theo lưu ý này.
+\end{ghichu}
+
+\section{Các hướng tiếp cận khác}
+
+Bài báo OATS còn báo cáo Template-ILO và Template-DLO~\cite{templatedlo2021} --- tăng cường dữ liệu bằng cách hoán vị
+thứ tự các thành phần trong chuỗi đích --- và GEN-SCL-NAT~\cite{genscl2023} --- kết hợp học đối lập có giám sát với một
+cấu trúc đích giàu thông tin hơn. Cả ba đều cùng họ \enquote{sinh chuỗi bằng T5}, khác nhau chủ yếu ở dạng chuỗi đích và
+cách tăng cường dữ liệu. Nhóm không cài đặt lại các phương pháp này; chúng được dùng làm mốc đối chiếu về mặt số liệu.
+
+Ở phía sản phẩm, các công cụ phân tích nhận xét thương mại thường dừng ở mức gán nhãn cảm xúc cho từng chủ đề được phát
+hiện tự động. Khoảng trống mà hệ thống này nhắm tới là giữ nguyên \emph{cụm từ ý kiến} do mô hình trích ra, nhờ đó
+dashboard trả lời được câu hỏi \enquote{vì sao khía cạnh này bị chê} chứ không chỉ \enquote{khía cạnh này bị chê}.
+
+\section{Công nghệ sử dụng}
+
+\begin{table}[H]
+\centering
+\caption{Công nghệ chính và vai trò.}
+\begin{tabularx}{\linewidth}{@{}lX@{}}
+\toprule
+\textbf{Thành phần} & \textbf{Công nghệ} \\
+\midrule
+Pipeline nghiên cứu & Python 3.12, PyTorch, Transformers~\cite{huggingface}, mô hình nền T5-base~\cite{t5} \\
+Service dự đoán & FastAPI~\cite{fastapi} + Uvicorn, nạp checkpoint qua chính mã của pipeline \\
+Giao diện web & React 19, TypeScript, Vite \\
+Kiểm thử & pytest (150 test), Vitest + Testing Library (98 test) \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% ============================================================================
+\chapter{Phân tích yêu cầu}
+\label{chap:yeucau}
+
+\section{Tác nhân}
+
+\begin{itemize}
+  \item \textbf{Người nghiên cứu} chạy pipeline, cần kết quả tái lập được và bằng chứng về dữ liệu đã dùng.
+  \item \textbf{Người phân tích của doanh nghiệp} có một tệp nhận xét và cần biết khía cạnh nào đang yếu, vì sao, và có
+        đủ dữ liệu để kết luận hay không.
+  \item \textbf{Người phát triển} nối giao diện với mô hình, cần một giao diện lập trình ổn định và chạy được cả khi
+        chưa có checkpoint.
+\end{itemize}
+
+\section{Yêu cầu chức năng}
+
+\begin{table}[H]
+\centering
+\caption{Yêu cầu chức năng chính.}
+\begin{tabularx}{\linewidth}{@{}llX@{}}
+\toprule
+\textbf{Mã} & \textbf{Tác nhân} & \textbf{Mô tả} \\
+\midrule
+CN1 & Nghiên cứu & Chuẩn bị dữ liệu từ nguồn thô, ghi lại nguồn, mã băm và danh mục khía cạnh \\
+CN2 & Nghiên cứu & Huấn luyện một thí nghiệm theo tệp cấu hình, chọn checkpoint tốt nhất theo F1 tập dev \\
+CN3 & Nghiên cứu & Đánh giá trên tập test, xuất metrics, dự đoán và các ca lỗi \\
+CN4 & Nghiên cứu & So sánh hai mô hình trong cùng một lĩnh vực, có kiểm tra cùng dữ liệu \\
+CN5 & Phát triển & Dự đoán một câu qua HTTP \\
+CN6 & Phát triển & Dự đoán nhiều câu trong một lần gọi, phục vụ xử lý theo lô \\
+CN7 & Phân tích & Phân tích một câu trên giao diện và xem đủ bốn thành phần \\
+CN8 & Phân tích & Tải lên tệp nhận xét (CSV/TXT/JSONL/JSON) và xem tỷ lệ cảm xúc theo từng khía cạnh \\
+CN9 & Phân tích & Xem các cụm từ chê phổ biến và các nhận xét cụ thể của một khía cạnh \\
+CN10 & Phân tích & Xuất bảng tổng hợp ra CSV \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Yêu cầu phi chức năng}
+
+\begin{itemize}
+  \item \textbf{Trung thực về bằng chứng.} Giao diện không được hiển thị con số chất lượng mô hình khi chưa có bằng
+        chứng; chế độ dữ liệu mẫu phải được dán nhãn rõ ràng.
+  \item \textbf{Không rò rỉ chi tiết nội bộ.} Lỗi phía máy chủ chỉ hiện thông báo ngắn và mã lỗi; vết lỗi nằm trong log.
+  \item \textbf{Chạy được khi chưa có mô hình.} Thiếu checkpoint phải cho ra trạng thái \code{MODEL\_NOT\_READY} có thể
+        hiển thị, không phải sự cố.
+  \item \textbf{Tiếp cận được.} Nhãn gắn đúng ô nhập, thông báo bằng vùng \code{aria-live}, cảm xúc phân biệt bằng chữ và
+        ký hiệu chứ không chỉ bằng màu~\cite{wcag}.
+  \item \textbf{Tái lập được.} Mỗi thí nghiệm ghi lại cấu hình, dấu vân tay dữ liệu và commit mã nguồn.
+\end{itemize}
+
+% ============================================================================
+\chapter{Thiết kế hệ thống}
+\label{chap:thietke}
+
+\section{Kiến trúc tổng thể}
+
+Hệ thống gồm ba tầng tách biệt, nối với nhau bằng những ranh giới hẹp và được định nghĩa rõ: tầng nghiên cứu sinh ra
+checkpoint, tầng phục vụ bọc checkpoint thành HTTP, tầng giao diện tiêu thụ HTTP (Hình~\ref{fig:kientruc}).
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=7mm]
+  \node[db] (raw) {Dữ liệu OATS\\(XML, TXT)};
+  \node[box=32mm,right=12mm of raw] (prep) {Chuẩn bị dữ liệu\\\scriptsize đọc, làm sạch, chia tập};
+  \node[db,right=12mm of prep] (proc) {\code{data/processed}\\\scriptsize jsonl + metadata};
+  \node[box=32mm,below=10mm of proc] (train) {Huấn luyện\\\scriptsize T5-base, chọn best};
+  \node[db,left=12mm of train] (ckpt) {\code{artifacts/}\\\scriptsize checkpoint};
+  \node[box=32mm,left=12mm of ckpt] (eval) {Đánh giá\\\scriptsize metrics, lỗi};
+
+  \node[gbox=34mm,below=14mm of ckpt] (svc) {Service HTTP\\\scriptsize \code{/predict}, \code{/predict/batch}};
+  \node[abox=34mm,below left=14mm and 2mm of svc] (ui1) {Giao diện: một câu};
+  \node[abox=34mm,below right=14mm and 2mm of svc] (ui2) {Giao diện: dashboard};
+
+  \draw[arr] (raw) -- (prep);
+  \draw[arr] (prep) -- (proc);
+  \draw[arr] (proc) -- (train);
+  \draw[arr] (train) -- (ckpt);
+  \draw[arr] (ckpt) -- (eval);
+  \draw[arr] (ckpt) -- (svc) node[lab,midway,right] {nạp một lần};
+  \draw[arr] (svc) -- (ui1);
+  \draw[arr] (svc) -- (ui2);
+\end{tikzpicture}
+\caption{Ba tầng của hệ thống. Tầng nghiên cứu và tầng sản phẩm chỉ gặp nhau tại thư mục checkpoint và tại hợp đồng HTTP.}
+\label{fig:kientruc}
+\end{figure}
+
+Lý do tách như vậy: tầng nghiên cứu phụ thuộc PyTorch và dữ liệu nặng, trong khi giao diện cần chạy được trên máy không
+có GPU. Mã nạp mô hình được nhập khẩu \emph{bên trong hàm}, nên toàn bộ phần xử lý dữ liệu và đánh giá vẫn chạy được khi
+máy không cài PyTorch --- đây cũng là điều cho phép bộ kiểm thử chạy nhanh trong môi trường phát triển.
+
+\section{Ba giao thức chia tập}
+\label{sec:giaothuc}
+
+\begin{table}[H]
+\centering
+\caption{So sánh ba giao thức chia tập mà pipeline hỗ trợ.}
+\label{tab:giaothuc}
+\begin{tabularx}{\linewidth}{@{}lXl@{}}
+\toprule
+\textbf{Giao thức} & \textbf{Cách làm và tính chất} & \textbf{Kiểm tra rò rỉ} \\
+\midrule
+\code{clean\_split} & Đọc XML, chia \emph{theo bài đánh giá} với seed cố định & Có, bằng mã \\
+\code{original\_split} & Dùng tệp chia sẵn, căn chỉnh từng dòng với câu trong XML để lấy lại định danh bài & Có, nếu căn chỉnh thành công \\
+\code{provided\_split} & Đọc thẳng tệp \code{train/dev/test.txt}, mỗi dòng là một mẫu & Không thể: TXT không có định danh bài \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Lượt chạy seed 42 dùng \code{provided\_split}. Lựa chọn này giữ đúng phân chia của tác giả bộ dữ liệu, nhưng đánh đổi:
+bảo đảm \enquote{không rò rỉ ở mức bài đánh giá} không còn kiểm chứng được bằng mã. Hệ thống không che giấu đánh đổi đó
+--- metadata ghi \code{review\_level\_leakage\_check.status = not\_verifiable}, và phần audit từ chối phát biểu
+\code{no\_review\_leakage} cho dữ liệu dạng dòng.
+
+\section{Hợp đồng HTTP}
+
+Giao diện và mô hình chỉ gặp nhau qua hai điểm cuối. Dạng dữ liệu được chọn trùng với dạng mà \code{capstone.predict} đã
+sinh ra, nên tầng phục vụ chỉ là lớp bọc mỏng chứ không phải một cách biểu diễn thứ hai.
+
+\begin{Verbatim}[fontsize=\small,frame=single,framesep=3mm]
+POST /predict
+{"text": "The room was dirty.", "domain": "hotels", "model_type": "paraphrase"}
+
+200 OK
+{"text": ..., "domain": ..., "model_type": ...,
+ "quadruples": [{"target": "room", "aspect": "rooms cleanliness",
+                 "opinion": "dirty", "sentiment": "negative"}],
+ "raw_generation": "...", "invalid_predictions": []}
+
+POST /predict/batch
+{"domain": "hotels", "model_type": "paraphrase",
+ "items": [{"id": "row-2", "text": "..."}, {"id": "row-3", "text": "..."}]}
+
+200 OK  {"results": [{"id": "row-2", "quadruples": [...]}, ...]}
+
+Lỗi (mọi điểm cuối)
+{"error": {"code": "MODEL_NOT_READY", "message": "..."}}
+\end{Verbatim}
+
+Ba quyết định đáng nói:
+
+\begin{itemize}
+  \item \textbf{Định danh do phía gọi đặt.} Mỗi phần tử trong lô mang \code{id} riêng và máy chủ trả lại đúng định danh
+        đó. Phía giao diện kiểm tra tập định danh trả về khớp tập đã gửi, nên kết quả không thể gắn nhầm sang nhận xét
+        khác khi thứ tự thay đổi.
+  \item \textbf{Một dạng lỗi duy nhất.} Mọi lỗi, kể cả lỗi kiểm tra dữ liệu vào, đều mang dạng \code{\{error:\{code,
+        message\}\}}; giao diện chỉ cần một nhánh xử lý.
+  \item \textbf{Thiếu mô hình là một trạng thái, không phải sự cố.} Cặp (lĩnh vực, mô hình) chưa khai báo hoặc thiếu
+        checkpoint trả về \code{MODEL\_NOT\_READY} kèm mã HTTP 503.
+\end{itemize}
+
+\section{Thiết kế dashboard theo khía cạnh}
+\label{sec:thietkedashboard}
+
+Phần này trả lời câu hỏi của doanh nghiệp: \emph{khía cạnh nào đang kéo đánh giá xuống?} Thiết kế xoay quanh một quyết
+định duy nhất nhưng quan trọng: \textbf{đơn vị đếm là bài đánh giá, không phải lượt nhắc}.
+
+Nếu đếm theo lượt nhắc, một bài chê phòng bẩn ba lần sẽ được tính ba lần và làm lệch tỷ lệ. Vì vậy mỗi bài đánh giá chỉ
+đóng góp tối đa một lần cho mỗi khía cạnh, theo quy tắc gộp ở Bảng~\ref{tab:quytac}.
+
+\begin{table}[H]
+\centering
+\caption{Quy tắc gộp nhiều lượt nhắc cùng một khía cạnh trong cùng một bài đánh giá.}
+\label{tab:quytac}
+\begin{tabularx}{\linewidth}{@{}lX@{}}
+\toprule
+\textbf{Nhãn bài} & \textbf{Điều kiện} \\
+\midrule
+Conflict & Có nhãn \code{conflict}, hoặc vừa có lượt tích cực vừa có lượt tiêu cực \\
+Negative & Có ít nhất một lượt tiêu cực và không có lượt tích cực \\
+Positive & Có ít nhất một lượt tích cực và không có lượt tiêu cực \\
+Neutral  & Chỉ có các lượt trung tính \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Quy tắc này khiến các tỷ lệ của một khía cạnh luôn cộng lại bằng 100\%, và giữ nhãn \code{conflict} tách riêng thay vì
+gộp vào một nhóm khác --- phù hợp với việc OATS coi conflict là một nhãn độc lập. Quy tắc được in ngay trên giao diện
+trong mục \enquote{How are reviews counted?} để người đọc bảng không phải đoán.
+
+Ba lựa chọn thiết kế còn lại đều nhằm chống kết luận sai:
+
+\begin{itemize}
+  \item \textbf{Ngưỡng số mẫu tối thiểu} (mặc định 3 bài đánh giá) ẩn những khía cạnh quá ít dữ liệu, tránh hiển thị
+        \enquote{100\% tiêu cực} dựa trên một nhận xét duy nhất.
+  \item \textbf{Hai mức gom nhóm:} theo danh mục đầy đủ (\code{rooms cleanliness}) hoặc theo nhóm lớn (\code{rooms}),
+        cho phép nhìn tổng quan trước rồi mới đi sâu.
+  \item \textbf{Luôn kèm bằng chứng:} mỗi khía cạnh mở ra được danh sách cụm từ chê phổ biến và các nhận xét gốc, nên
+        người dùng kiểm tra lại được thay vì tin vào một con số.
+\end{itemize}
+
+% ============================================================================
+\chapter{Triển khai}
+\label{chap:trienkhai}
+
+\section{Tầng dữ liệu}
+
+Bộ đọc XML kiểm tra tính nhất quán của chú thích ngay khi đọc: với mỗi quadruple, nếu dữ liệu cung cấp vị trí ký tự thì
+vị trí đó phải trỏ đúng vào cụm từ tương ứng trong câu. Các bất thường không làm dừng chương trình mà được ghi thành
+danh sách \code{DataIssue} có lý do, kèm đường dẫn nguồn và số dòng, rồi tổng hợp vào metadata.
+
+Quyết định quan trọng ở bước làm sạch: \textbf{bài đánh giá không có nhãn được giữ lại}. Không có nhãn có thể nghĩa là
+\enquote{câu này thật sự không chứa ý kiến} hoặc \enquote{người gán nhãn bỏ sót}; dữ liệu không phân biệt được hai
+trường hợp đó. Vì vậy pipeline coi đây là trạng thái chưa rõ và chỉ cho phép loại bỏ thông qua một tệp kê khai có dẫn
+chứng; nếu tệp kê khai chứa định danh không tồn tại, bước chuẩn bị dữ liệu dừng lại thay vì im lặng bỏ qua.
+
+\section{Dấu vân tay và chống lệch dữ liệu}
+
+Đây là cơ chế giữ cho kết quả không bị \enquote{trôi}. Bước chuẩn bị dữ liệu ghi vào \code{metadata.json}: mã băm
+SHA-256 của từng tệp nguồn và từng tệp tập dữ liệu, cấu hình làm sạch, danh mục khía cạnh của lĩnh vực và, với
+\code{clean\_split}, cả seed. Trước khi huấn luyện, trình huấn luyện đối chiếu metadata này với cấu hình thí nghiệm; khi
+đánh giá, bước đánh giá kiểm tra lại dấu vân tay; khi so sánh hai mô hình, chương trình yêu cầu hai thí nghiệm có
+\emph{cùng dấu vân tay tập test và cùng danh mục khía cạnh}, chứ không chỉ cùng số lượng mẫu.
+
+Trong lần rà soát trước khi gộp mã, nhóm phát hiện metadata của giao thức \code{provided\_split} lưu đường dẫn tuyệt đối
+của máy chạy. Hệ quả là dữ liệu đã xử lý không dùng lại được trên máy khác, vì bước kiểm tra sẽ không tìm thấy tệp
+nguồn. Lỗi đã được sửa: đường dẫn nay được lưu đúng như cấu hình, thường là đường dẫn tương đối tới gốc dự án.
+
+\section{Hai bộ chuyển đổi đầu ra}
+
+Mỗi mô hình có một cặp hàm: một hàm biến danh sách quadruple thành chuỗi đích để huấn luyện, và một hàm đọc ngược chuỗi
+sinh ra thành quadruple. Hàm đọc ngược phải chịu được mọi thứ mô hình có thể sinh ra, kể cả chuỗi hỏng, nên nó không
+ném lỗi mà trả về hai danh sách: các quadruple hợp lệ, và các mẩu không đọc được kèm lý do. Các mẩu hỏng này đi thẳng
+vào kết quả đánh giá dưới dạng \code{invalid\_predictions}, nhờ đó \enquote{mô hình sinh sai cú pháp} là một đại lượng
+đo được chứ không phải thông tin bị mất.
+
+\section{Chuẩn hóa và tính điểm}
+
+Trước khi so khớp, cả nhãn chuẩn lẫn dự đoán đều đi qua bước chuẩn hóa: gộp khoảng trắng thừa, nhận diện các cách viết
+của giá trị ngầm hiểu, và đối chiếu khía cạnh với danh mục của lĩnh vực. Việc đối chiếu danh mục quan trọng vì mô hình
+sinh tự do có thể tạo ra một khía cạnh không tồn tại; những trường hợp đó được đánh dấu thay vì âm thầm tính là sai.
+
+Ngoài P/R/F1 khớp hoàn toàn, bước đánh giá còn xuất các chẩn đoán: độ chính xác theo từng thành phần, kết quả theo số
+lượng quadruple trong câu, và phân loại lỗi (thiếu quadruple, thừa quadruple, sai một thành phần, hỏng về đối tượng hoặc
+ý kiến ngầm hiểu).
+
+\begin{ghichu}{Một lỗi đếm trùng đã được sửa}
+Khi rà soát, nhóm phát hiện một quadruple đã được báo cáo trong danh sách \enquote{sai một thành phần} vẫn bị đếm thêm
+một lần nữa vào danh sách \enquote{hỏng ý kiến ngầm hiểu}. Nhánh xử lý đối tượng đã được khử trùng lặp trước đó, nhánh
+ý kiến thì chưa. Lỗi này chỉ ảnh hưởng \emph{số liệu chẩn đoán}, không ảnh hưởng P/R/F1, và đã được sửa kèm ba test
+kiểm chứng thất bại trên mã cũ. Con số \code{implicit\_opinion\_failure} công bố trong báo cáo lượt chạy seed 42 được
+tính trước bản sửa này, nên không so sánh trực tiếp được với con số tương ứng của đối tượng.
+\end{ghichu}
+
+\section{Service dự đoán}
+
+Service có hai phần. Phần đăng ký ánh xạ cặp (lĩnh vực, mô hình) tới một thư mục checkpoint theo tệp cấu hình, nạp mô
+hình \emph{lười} ở lần gọi đầu tiên rồi giữ lại trong bộ nhớ. Phần ứng dụng chuyển hai điểm cuối thành lời gọi tới mô
+hình đã nạp.
+
+Quyết định đáng nói nhất là cách xử lý thất bại: mọi lỗi khi nạp mô hình --- thiếu thư viện, thiếu tệp, checkpoint hỏng
+--- đều được ghi log đầy đủ rồi chuyển thành một \code{MODEL\_NOT\_READY} duy nhất gửi cho phía gọi, và kết quả thất bại
+đó được nhớ lại để không thử nạp lại ở từng yêu cầu. Nhờ vậy một checkpoint hỏng không biến thành hàng nghìn lần nạp mô
+hình thất bại.
+
+\section{Giao diện web}
+
+Giao diện tách thành ba lớp: các thành phần hiển thị, một giao diện lập trình \code{PredictionService}, và hai hiện thực
+của giao diện đó --- một gọi HTTP thật, một chạy dữ liệu mẫu ngay trong trình duyệt. Thành phần hiển thị không biết hiện
+thực nào đang chạy; chuyển đổi bằng biến môi trường, không phải bằng sửa mã.
+
+Chế độ dữ liệu mẫu không phải là mã tạm thời. Nó cho phép phát triển và kiểm thử toàn bộ giao diện khi chưa có
+checkpoint, và được dán nhãn rõ trên màn hình để không ai nhầm dữ liệu mẫu với dự đoán thật.
+
+Hai chi tiết kỹ thuật đáng chú ý:
+
+\begin{itemize}
+  \item \textbf{Chống ghi đè kết quả cũ.} Mỗi yêu cầu mới hủy yêu cầu đang chạy; phản hồi đến muộn của yêu cầu đã bị
+        thay thế sẽ bị bỏ qua, nên kết quả hiển thị luôn ứng với lần bấm cuối cùng.
+  \item \textbf{Xử lý tệp theo lô, có thể tiếp tục.} Tệp nhiều nhận xét được chia thành các lô 20 dòng. Các lô đã xong
+        được giữ lại, nên khi gặp lỗi mạng giữa chừng, nút \enquote{Resume} chỉ gửi lại phần còn thiếu thay vì làm lại
+        từ đầu.
+\end{itemize}
+
+% ============================================================================
+\chapter{Kết quả và đánh giá}
+\label{chap:ketqua}
+
+\section{Thiết lập thí nghiệm}
+
+Sáu thí nghiệm (2 mô hình $\times$ 3 lĩnh vực) dùng chung thiết lập: T5-base, 20 epoch, kích thước lô 16, tốc độ học
+$3\cdot10^{-4}$, độ dài chuỗi vào/ra 128, giải mã tham lam, seed 42, giao thức \code{provided\_split}. Checkpoint được
+chọn theo F1 trên tập dev. Mọi số liệu dưới đây là của \emph{một} seed duy nhất.
+
+\section{Kết quả trên tập test}
+
+\begin{table}[H]
+\centering
+\caption{Kết quả seed 42 trên tập test, khớp hoàn toàn cả bốn thành phần.}
+\label{tab:ketqua}
+\begin{tabular}{llrrrrrrr}
+\toprule
+\textbf{Lĩnh vực} & \textbf{Mô hình} & \textbf{Epoch} & \textbf{Dev F1} & \textbf{P} & \textbf{R} & \textbf{F1} & \textbf{TP} & \textbf{FP} \\
+\midrule
+\code{amazon\_ff} & GAS        & 14 & 0,297 & 0,247 & 0,209 & \textbf{0,227} & 202 & 615 \\
+\code{coursera}   & GAS        & 5  & 0,295 & 0,071 & 0,254 & \textbf{0,111} & 60  & 785 \\
+\code{hotels}     & GAS        & 19 & 0,442 & 0,299 & 0,413 & \textbf{0,347} & 100 & 234 \\
+\code{amazon\_ff} & Paraphrase & 5  & 0,294 & 0,215 & 0,205 & \textbf{0,210} & 198 & 721 \\
+\code{coursera}   & Paraphrase & 3  & 0,308 & 0,095 & 0,309 & \textbf{0,145} & 73  & 699 \\
+\code{hotels}     & Paraphrase & 16 & 0,454 & 0,337 & 0,459 & \textbf{0,389} & 111 & 218 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+So sánh hai mô hình trong cùng lĩnh vực: Paraphrase cao hơn GAS ở \code{coursera} ($+0{,}034$) và \code{hotels}
+($+0{,}042$), thấp hơn ở \code{amazon\_ff} ($-0{,}017$). Ba quan sát từ một seed duy nhất không đủ để kết luận mô hình
+nào tốt hơn nói chung; muốn phát biểu như vậy cần giao thức năm seed như bài báo.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  width=0.9\linewidth, height=6.2cm,
+  ybar, bar width=9pt,
+  ylabel={F1 khớp hoàn toàn},
+  symbolic x coords={amazon\_ff, coursera, hotels},
+  xtick=data, ymin=0, ymax=0.45,
+  legend style={at={(0.5,-0.18)},anchor=north,legend columns=4,font=\small},
+  ymajorgrids, grid style={lightgray},
+  nodes near coords, nodes near coords style={font=\tiny},
+  every node near coord/.append style={/pgf/number format/.cd,fixed,precision=3},
+]
+\addplot[fill=oatsblue!70,draw=oatsblue] coordinates {(amazon\_ff,0.227) (coursera,0.111) (hotels,0.347)};
+\addplot[fill=oatsgreen!70,draw=oatsgreen] coordinates {(amazon\_ff,0.210) (coursera,0.145) (hotels,0.389)};
+\addplot[fill=oatsgray!40,draw=oatsgray] coordinates {(amazon\_ff,0.196) (coursera,0.222) (hotels,0.263)};
+\addplot[fill=oatsamber!50,draw=oatsamber] coordinates {(amazon\_ff,0.208) (coursera,0.198) (hotels,0.345)};
+\legend{GAS (nhóm), Paraphrase (nhóm), GAS-T5 (bài báo), Paraphrase (bài báo)}
+\end{axis}
+\end{tikzpicture}
+\caption{Kết quả của nhóm so với số công bố trong bài báo OATS. Hai nhóm cột \emph{không} cùng điều kiện thí nghiệm:
+số của nhóm là một seed theo \code{provided\_split}, số của bài báo là trung bình năm seed; cú pháp đích của GAS cũng
+khác. Hình chỉ để định vị độ lớn, không phải một phép so sánh công bằng.}
+\label{fig:sosanh}
+\end{figure}
+
+\section{Vì sao không so sánh trực tiếp được với bài báo}
+\label{sec:nhanrong}
+
+Khi rà soát kết quả, nhóm nhận thấy \code{coursera} có 785 dự đoán sai dương so với chỉ 60 dự đoán đúng --- một tỷ lệ
+bất thường. Nguyên nhân nằm ở dữ liệu chứ không ở mô hình. Bảng~\ref{tab:rong} cho thấy tỷ lệ dòng không mang nhãn nào
+trong các tệp chia sẵn.
+
+\begin{table}[H]
+\centering
+\caption{Tỷ lệ dòng không có nhãn trong các tệp chia sẵn, do nhóm đếm trực tiếp.}
+\label{tab:rong}
+\begin{tabular}{lrrr}
+\toprule
+\textbf{Lĩnh vực} & \textbf{Train} & \textbf{Dev} & \textbf{Test} \\
+\midrule
+\code{amazon\_ff} & 29,3\% & 23,5\% & 25,8\% \\
+\code{coursera}   & 26,2\% & 23,9\% & \textbf{80,8\%} \\
+\code{hotels}     & 24,5\% & 39,4\% & \textbf{86,7\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Tổng số dòng và tổng số dòng không nhãn của ba tập cộng lại khớp với dữ liệu XML, nên đây đúng là phân chia gốc của bộ
+dữ liệu chứ không phải lỗi xử lý. Nhưng hệ quả rất lớn: ở \code{hotels}, hơn 86\% câu trong tập test không có nhãn nào,
+nên mỗi quadruple mà mô hình sinh ra cho những câu đó đều bị tính là sai dương, kéo precision xuống. Tỷ lệ này ở tập
+train chỉ khoảng 25\%, tức là phân bố giữa lúc học và lúc chấm rất khác nhau.
+
+\begin{ghichu}{Kết luận cần giữ đúng mức}
+Các con số trong Bảng~\ref{tab:ketqua} là kết quả hợp lệ \emph{trong giao thức \code{provided\_split}}. Chúng không
+tương đương với số của bài báo, và chênh lệch giữa các lĩnh vực phản ánh đặc điểm phân chia dữ liệu ít nhất ngang với
+việc phản ánh chất lượng mô hình.
+\end{ghichu}
+
+\section{Trạng thái các giao thức chia tập}
+
+Khi kiểm chứng lại, nhóm chạy thử cả ba giao thức trên dữ liệu thật:
+
+\begin{table}[H]
+\centering
+\caption{Kết quả chạy thử bước chuẩn bị dữ liệu theo từng giao thức.}
+\begin{tabular}{llll}
+\toprule
+\textbf{Giao thức} & \code{amazon\_ff} & \code{coursera} & \code{hotels} \\
+\midrule
+\code{clean\_split}    & Thành công & Thành công & Thành công \\
+\code{provided\_split} & Thành công & Thành công & Thành công \\
+\code{original\_split} & Lỗi (dòng 12) & Lỗi (dòng 11) & Lỗi (dòng 48) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Lỗi của \code{original\_split} là \enquote{một dòng khớp với nhiều câu XML chưa được gán và nhãn không phân biệt được
+duy nhất một câu}: khi cùng một câu xuất hiện nhiều lần trong bộ dữ liệu, bước căn chỉnh không biết dòng đó thuộc về
+bài đánh giá nào. Phát hiện quan trọng là \code{clean\_split} --- giao thức có kiểm tra rò rỉ --- vẫn chạy được trên cả
+ba lĩnh vực. Nói cách khác, giao thức chính của dự án không hỏng, và việc chạy lại ma trận thí nghiệm theo
+\code{clean\_split} là khả thi. Repository giữ sẵn một cấu hình \code{clean\_split} với thư mục dữ liệu và thư mục kết
+quả riêng để giao thức này không bị bỏ quên.
+
+\section{Kiểm thử phần mềm}
+
+\begin{table}[H]
+\centering
+\caption{Bộ kiểm thử tự động.}
+\begin{tabularx}{\linewidth}{@{}lrX@{}}
+\toprule
+\textbf{Phạm vi} & \textbf{Số test} & \textbf{Nội dung chính} \\
+\midrule
+Pipeline (pytest)   & 123 & Đọc XML, làm sạch, chia tập và chống rò rỉ, dấu vân tay, hai bộ chuyển đổi đầu ra, chuẩn hóa và tính điểm, các lệnh dòng lệnh \\
+Service (pytest)    & 27  & Hợp đồng hai điểm cuối, echo định danh theo lô, nạp mô hình một lần, các đường lỗi \code{MODEL\_NOT\_READY} và \code{PREDICTION\_FAILED}, CORS, đọc tệp cấu hình phục vụ \\
+Giao diện (Vitest)  & 98  & Trạng thái tải/lỗi/rỗng, hiển thị quadruple và giá trị ngầm hiểu, đọc tệp CSV/TXT/JSONL/JSON, quy tắc đếm theo bài đánh giá, xuất CSV, chia lô và tiếp tục khi lỗi \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Ngoài test tự động, luồng web đã được chạy thật đầu-cuối: service chạy trên cổng 8000, giao diện chạy ở chế độ API và
+gọi qua proxy, thao tác thật trên trình duyệt cho thấy nhãn chế độ đổi thành \enquote{API mode}, phân tích một câu trả
+về quadruple đúng, cặp lĩnh vực chưa khai báo hiện \code{MODEL\_NOT\_READY} kèm nút thử lại, và tệp mẫu 30 nhận xét đi
+qua điểm cuối theo lô rồi lên dashboard.
+
+\begin{ghichu}{Điều kiện của lần kiểm chứng đầu-cuối}
+Máy phát triển không cài PyTorch và không có checkpoint, nên lần chạy đầu-cuối dùng một bộ dự đoán giả đặt \emph{ngoài}
+mã sản phẩm. Phép thử này xác nhận hợp đồng HTTP, việc chia lô và toàn bộ luồng giao diện; nó \emph{không} xác nhận chất
+lượng dự đoán của mô hình thật.
+\end{ghichu}
+
+% ============================================================================
+\chapter{Kết luận và hướng phát triển}
+\label{chap:ketluan}
+
+\section{Kết luận}
+
+Hệ thống đã đi trọn một vòng: từ dữ liệu OATS thô, qua pipeline có kiểm chứng, tới sáu mô hình đã huấn luyện, và tới một
+giao diện trả lời được câu hỏi kinh doanh \enquote{khía cạnh nào đang yếu và vì sao}. Phần nhóm cho là có giá trị nhất
+không phải các con số F1 --- vốn còn thấp và chỉ từ một seed --- mà là việc mọi phát biểu trong hệ thống đều gắn với
+bằng chứng: dấu vân tay dữ liệu chặn việc đánh giá nhầm tập, trạng thái không kiểm chứng được thì được ghi là không
+kiểm chứng được, và chế độ dữ liệu mẫu được dán nhãn thay vì giả làm dự đoán thật.
+
+\section{Hướng phát triển}
+
+\begin{enumerate}
+  \item \textbf{Đo độ chính xác của cặp (khía cạnh, cảm xúc).} Dashboard chỉ dựa vào cặp này, trong khi F1 hiện tại đòi
+        hỏi đúng cả bốn thành phần --- một tiêu chí nghiêm ngặt hơn nhiều so với nhu cầu của dashboard. Đây là việc nên
+        làm trước tiên, vì nó quyết định có được phép đưa dashboard cho người dùng thật hay không.
+  \item \textbf{Chạy lại ma trận theo \code{clean\_split}} để có kết quả kèm bảo đảm không rò rỉ cấp bài đánh giá, rồi
+        báo cáo song song hai giao thức.
+  \item \textbf{Giao thức năm seed} (30 lần huấn luyện, 30 lần đánh giá) để báo cáo trung bình và độ lệch chuẩn.
+  \item \textbf{Sửa bước căn chỉnh XML} của \code{original\_split} cho trường hợp câu trùng lặp.
+  \item \textbf{So sánh theo thời gian trên dashboard:} thêm cột ngày để doanh nghiệp kiểm chứng xem sau khi cải thiện
+        một khía cạnh thì tỷ lệ tiêu cực có giảm thật hay không.
+  \item \textbf{Tăng cường phần phục vụ:} xác thực, giới hạn tần suất và đóng gói container trước khi mở ra ngoài.
+\end{enumerate}
+
+\bibliographystyle{plain}
+\bibliography{references}
+\addcontentsline{toc}{chapter}{Tài liệu tham khảo}
+
+\end{document}
