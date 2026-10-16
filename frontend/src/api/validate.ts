@@ -1,4 +1,13 @@
-import { PredictionError, type InvalidPrediction, type PredictRequest, type PredictResponse, type Quadruple } from "./types";
+import {
+  PredictionError,
+  type BatchPredictRequest,
+  type BatchPredictResponse,
+  type BatchResult,
+  type InvalidPrediction,
+  type PredictRequest,
+  type PredictResponse,
+  type Quadruple,
+} from "./types";
 
 const QUADRUPLE_FIELDS = ["target", "aspect", "opinion", "sentiment"] as const;
 const MAX_SERVER_MESSAGE_LENGTH = 300;
@@ -52,6 +61,39 @@ export function parsePredictResponse(body: unknown, request: PredictRequest): Pr
     response.invalid_predictions = body.invalid_predictions.filter(isRecord) as InvalidPrediction[];
   }
   return response;
+}
+
+/**
+ * Validates a batch body: every requested id must come back exactly once with valid
+ * quadruples. Unknown ids are rejected so results can never attach to the wrong review.
+ */
+export function parseBatchResponse(body: unknown, request: BatchPredictRequest): BatchPredictResponse {
+  if (!isRecord(body) || !Array.isArray(body.results)) {
+    throw malformed("'results' is missing or not a list");
+  }
+  const expected = new Set(request.items.map((item) => item.id));
+  const seen = new Set<string>();
+  const results: BatchResult[] = body.results.map((value, index) => {
+    if (!isRecord(value) || typeof value.id !== "string") {
+      throw malformed(`result ${index} has no string 'id'`);
+    }
+    if (!expected.has(value.id) || seen.has(value.id)) {
+      throw malformed(`result ${index} has an unknown or duplicate id`);
+    }
+    seen.add(value.id);
+    if (!Array.isArray(value.quadruples)) {
+      throw malformed(`result ${index} has no 'quadruples' list`);
+    }
+    const result: BatchResult = { id: value.id, quadruples: value.quadruples.map(parseQuadruple) };
+    if (Array.isArray(value.invalid_predictions)) {
+      result.invalid_predictions = value.invalid_predictions.filter(isRecord) as InvalidPrediction[];
+    }
+    return result;
+  });
+  if (seen.size !== expected.size) {
+    throw malformed(`${expected.size - seen.size} requested item(s) are missing from 'results'`);
+  }
+  return { results };
 }
 
 /**

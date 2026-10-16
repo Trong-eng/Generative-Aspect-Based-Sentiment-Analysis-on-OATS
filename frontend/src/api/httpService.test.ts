@@ -117,6 +117,64 @@ describe("createHttpPredictionService", () => {
     expect((await pending).kind).toBe("aborted");
   });
 
+  it("POSTs batches to /predict/batch and validates the result ids", async () => {
+    const items = [
+      { id: "row-2", text: "Dirty room." },
+      { id: "row-3", text: "Great staff." },
+    ];
+    const quads = [{ target: "room", aspect: "rooms cleanliness", opinion: "dirty", sentiment: "negative" }];
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ results: [{ id: "row-3", quadruples: [] }, { id: "row-2", quadruples: quads }] }),
+    );
+    const service = createHttpPredictionService({ baseUrl: "https://api.example.test/", timeoutMs: 1000, fetchImpl });
+
+    const response = await service.predictBatch({ domain: "hotels", model_type: "gas", items });
+
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://api.example.test/predict/batch");
+    expect(JSON.parse(init.body as string)).toEqual({ domain: "hotels", model_type: "gas", items });
+    expect(response.results).toEqual([
+      { id: "row-3", quadruples: [] },
+      { id: "row-2", quadruples: quads },
+    ]);
+  });
+
+  it.each([
+    ["a missing id", { results: [{ id: "row-2", quadruples: [] }] }],
+    ["an unknown id", { results: [{ id: "row-2", quadruples: [] }, { id: "zzz", quadruples: [] }] }],
+    ["a duplicate id", { results: [{ id: "row-2", quadruples: [] }, { id: "row-2", quadruples: [] }] }],
+    ["no results list", { items: [] }],
+    ["bad quadruples", { results: [{ id: "row-2", quadruples: [{ target: 1 }] }, { id: "row-3", quadruples: [] }] }],
+  ])("rejects a batch response with %s", async (_label, body) => {
+    const service = createHttpPredictionService({
+      baseUrl: "",
+      timeoutMs: 1000,
+      fetchImpl: vi.fn(async () => jsonResponse(body)),
+    });
+    const items = [
+      { id: "row-2", text: "a" },
+      { id: "row-3", text: "b" },
+    ];
+    expect((await rejection(service.predictBatch({ domain: "hotels", model_type: "gas", items }))).kind).toBe(
+      "malformed",
+    );
+  });
+
+  it("uses a longer timeout for batches", async () => {
+    vi.useFakeTimers();
+    const service = createHttpPredictionService({ baseUrl: "", timeoutMs: 1000, fetchImpl: hangingFetch() });
+    const pending = rejection(
+      service.predictBatch({ domain: "hotels", model_type: "gas", items: [{ id: "1", text: "a" }] }),
+    );
+    let settled = false;
+    void pending.then(() => (settled = true));
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect((await pending).kind).toBe("timeout");
+  });
+
   it("rejects success responses that are not JSON or break the schema", async () => {
     const notJson = createHttpPredictionService({
       baseUrl: "",

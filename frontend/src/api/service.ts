@@ -1,4 +1,4 @@
-import type { PredictRequest, PredictResponse } from "./types";
+import type { BatchPredictRequest, BatchPredictResponse, PredictRequest, PredictResponse } from "./types";
 
 export interface PredictOptions {
   /** Aborting cancels the request; the service then rejects with kind `aborted`. */
@@ -12,4 +12,6 @@ export interface PredictOptions {
 export interface PredictionService {
   readonly mode: "mock" | "api";
   predict(request: PredictRequest, options?: PredictOptions): Promise<PredictResponse>;
+  /** Analyzes many texts in one call; results are matched to items by `id`. */
+  predictBatch(request: BatchPredictRequest, options?: PredictOptions): Promise<BatchPredictResponse>;
 }
