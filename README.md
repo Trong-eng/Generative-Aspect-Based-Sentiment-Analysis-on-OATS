@@ -38,7 +38,7 @@ GAS trong dự án là một cách triển khai theo hướng trích xuất cho 
 
 | Hạng mục | Trạng thái |
 |---|---|
-| Mã nguồn pipeline và ma trận 2 mô hình × 3 lĩnh vực | Đã viết; chưa xác minh khi chạy |
+| Mã nguồn pipeline và ma trận 2 mô hình × 3 lĩnh vực | Đã chạy seed 42 theo `provided_split`; kết quả trong báo cáo Thanh_03 |
 | Tài liệu giải thích và hướng dẫn | Đã viết |
 | Bộ kiểm tra tự động | Đã viết; trạng thái lần chạy xem trong báo cáo Thanh_03 |
 | Chuẩn bị dữ liệu và kiểm tra split TXT | Dùng các file train/dev/test có sẵn; không kiểm tra leakage cấp review |

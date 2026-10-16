@@ -458,35 +458,42 @@ def evaluate_records(
                 implicit_target_failures.append(mismatch)
             if mismatch.get("implicit_opinion_failure"):
                 implicit_opinion_failures.append(mismatch)
-        paired_mismatch_gold = Counter(
-            tuple(mismatch["gold"][field] for field in _COMPONENTS)
-            for mismatch in mismatches
-        )
-        paired_mismatch_predicted = Counter(
-            tuple(mismatch["predicted"][field] for field in _COMPONENTS)
-            for mismatch in mismatches
-        )
+        # A quadruple already reported inside `mismatches` must not be counted again as an
+        # implicit failure. Target and opinion are tracked separately because each branch
+        # consumes its own pairing budget.
+        def _paired_counter(side: str) -> Counter:
+            return Counter(
+                tuple(mismatch[side][field] for field in _COMPONENTS) for mismatch in mismatches
+            )
+
+        paired_gold_target = _paired_counter("gold")
+        paired_gold_opinion = _paired_counter("gold")
+        paired_predicted_target = _paired_counter("predicted")
+        paired_predicted_opinion = _paired_counter("predicted")
+
+        def _consume(counter: Counter, key: tuple[str, ...]) -> bool:
+            if counter[key]:
+                counter[key] -= 1
+                return True
+            return False
+
         for item in false_negatives:
             key = _quadruple_key(item)
-            if paired_mismatch_gold[key]:
-                paired_mismatch_gold[key] -= 1
-            elif _is_implicit(item.target):
+            if not _consume(paired_gold_target, key) and _is_implicit(item.target):
                 implicit_target_failures.append(
                     {"gold": _quadruple_dict(item), "predicted": None, "reason": "missed_implicit"}
                 )
-            if _is_implicit(item.opinion):
+            if not _consume(paired_gold_opinion, key) and _is_implicit(item.opinion):
                 implicit_opinion_failures.append(
                     {"gold": _quadruple_dict(item), "predicted": None, "reason": "missed_implicit"}
                 )
         for item in false_positives:
             key = _quadruple_key(item)
-            if paired_mismatch_predicted[key]:
-                paired_mismatch_predicted[key] -= 1
-            elif _is_implicit(item.target):
+            if not _consume(paired_predicted_target, key) and _is_implicit(item.target):
                 implicit_target_failures.append(
                     {"gold": None, "predicted": _quadruple_dict(item), "reason": "spurious_implicit"}
                 )
-            if _is_implicit(item.opinion):
+            if not _consume(paired_predicted_opinion, key) and _is_implicit(item.opinion):
                 implicit_opinion_failures.append(
                     {"gold": None, "predicted": _quadruple_dict(item), "reason": "spurious_implicit"}
                 )

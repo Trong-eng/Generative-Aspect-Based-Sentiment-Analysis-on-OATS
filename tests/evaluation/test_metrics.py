@@ -280,3 +280,44 @@ def test_error_cases_classify_true_positives_missing_extras_and_implicit_opinion
     assert metrics["tp"] == 1
     assert metrics["fn"] == 2
     assert metrics["fp"] == 2
+
+
+def test_paired_aspect_mismatch_with_two_implicit_opinions_is_not_an_implicit_opinion_failure():
+    """Mirror of the implicit-target case: a quadruple already reported as a paired
+    mismatch must not be counted again as an implicit-opinion failure."""
+    gold = q("", "FOOD#QUALITY", "", "positive")
+    predicted = q("", "SERVICE#GENERAL", "", "positive")
+
+    metrics, _, errors = evaluate_records(
+        [{"gold_quadruples": [gold], "predicted_quadruples": [predicted]}]
+    )
+
+    assert (metrics["tp"], metrics["fp"], metrics["fn"]) == (0, 1, 1)
+    assert errors[0]["wrong_field_mismatches"][0]["wrong_fields"] == ["aspect"]
+    assert errors[0]["implicit_opinion_failures"] == []
+    assert "implicit_opinion_failure" not in errors[0]["error_types"]
+
+
+@pytest.mark.parametrize(
+    ("gold", "predicted", "unpaired_reason"),
+    [
+        (
+            [q("waiter", "SERVICE#GENERAL", "", "negative")] * 2,
+            [q("waiter", "SERVICE#GENERAL", "slow", "negative")],
+            "missed_implicit",
+        ),
+        (
+            [q("waiter", "SERVICE#GENERAL", "slow", "negative")],
+            [q("waiter", "SERVICE#GENERAL", "", "negative")] * 2,
+            "spurious_implicit",
+        ),
+    ],
+)
+def test_implicit_opinion_mismatch_keeps_any_unpaired_duplicate(gold, predicted, unpaired_reason):
+    _, _, errors = evaluate_records(
+        [{"gold_quadruples": gold, "predicted_quadruples": predicted}]
+    )
+
+    failures = errors[0]["implicit_opinion_failures"]
+    assert sum("wrong_fields" in failure for failure in failures) == 1
+    assert [failure.get("reason") for failure in failures if "reason" in failure] == [unpaired_reason]

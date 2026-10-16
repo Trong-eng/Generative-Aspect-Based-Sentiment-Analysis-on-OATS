@@ -114,7 +114,16 @@ def test_provided_split_raw_and_processed_audits_do_not_claim_review_leakage(tmp
     _write_split_sources(raw_root)
     output_dir = tmp_path / "raw-audit"
     args = build_parser().parse_args(
-        ["--domain", "amazon_ff", "--raw-root", str(raw_root), "--output-dir", str(output_dir)]
+        [
+            "--domain",
+            "amazon_ff",
+            "--source-mode",
+            "provided_split",
+            "--raw-root",
+            str(raw_root),
+            "--output-dir",
+            str(output_dir),
+        ]
     )
     monkeypatch.setattr(
         "capstone.audit_data.parse_oats_xml",
@@ -143,3 +152,44 @@ def test_provided_split_raw_and_processed_audits_do_not_claim_review_leakage(tmp
     assert processed_result["review_level_leakage_check"]["status"] == "not_verifiable"
     assert "review_overlap" not in processed_result
     assert "no_review_leakage" not in processed_result
+
+
+def test_provided_split_metadata_keeps_source_paths_portable_and_counts_issues(tmp_path, monkeypatch):
+    """Processed data must be usable from another machine, and per-split issue counters
+    must reflect the rows cleaning dropped (POLARITY#* in the fixture)."""
+    raw_root = tmp_path / "raw"
+    _write_split_sources(raw_root)
+    processed_root = tmp_path / "processed"
+    monkeypatch.chdir(tmp_path)
+
+    prepare_domain(
+        "amazon_ff",
+        split_mode="provided_split",
+        seed=None,
+        sentiment_mode="paper_compatible",
+        raw_root=Path("raw"),
+        output_root=processed_root,
+    )
+    metadata = json.loads((processed_root / "amazon_ff" / "metadata.json").read_text(encoding="utf-8"))
+
+    for name, source_path in metadata["source_paths"].items():
+        assert not Path(source_path).is_absolute(), f"{name} must stay relative: {source_path}"
+    train_stats = metadata["split_statistics"]["train"]
+    assert train_stats["invalid_category_count"] == 1
+    assert train_stats["issue_counts"].get("invalid_aspect_category") == 1
+    assert metadata["split_statistics"]["dev"]["invalid_category_count"] == 0
+
+    # The recorded relative paths still validate from the same working directory.
+    validate_prepared_metadata(
+        processed_root / "amazon_ff",
+        domain="amazon_ff",
+        split_mode="provided_split",
+        sentiment_mode="paper_compatible",
+        dataset_version="oats_provided_txt_v1",
+        cleaning_configuration=metadata["cleaning_configuration"],
+    )
+
+
+def test_audit_data_defaults_to_xml_source_mode():
+    """The CLI default must not silently switch an existing XML audit command to TXT."""
+    assert build_parser().parse_args(["--domain", "amazon_ff"]).source_mode == "xml"

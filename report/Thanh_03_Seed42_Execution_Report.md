@@ -82,7 +82,9 @@ Trong lần chạy và split này, Paraphrase có F1 thấp hơn GAS trên amazo
 
 ## 6. Error analysis
 
-Đã tạo error_analysis.jsonl cho cả sáu run trong từng thư mục evaluation. Tổng hợp trực tiếp từ artifacts: 25 invalid generations (19 malformed_generation, 4 invalid_quadruple_shape, 2 missing_field). Trong error-analysis records, các cờ lỗi phổ biến là extra_quadruple (2706), missing_quadruple (1553), wrong_field_mismatch (1265), implicit_target_failure (1184) và implicit_opinion_failure (790). Trong các trường của mismatch, opinion (1030) xuất hiện nhiều nhất, tiếp theo aspect (477), target (469), sentiment (249).
+Đã tạo error_analysis.jsonl cho cả sáu run trong từng thư mục evaluation. Tổng hợp trực tiếp từ artifacts: 25 invalid generations (19 malformed_generation, 4 invalid_quadruple_shape, 2 missing_field). Trong error-analysis records, các cờ lỗi phổ biến là extra_quadruple (2706), missing_quadruple (1553), wrong_field_mismatch (1265), implicit_target_failure (1184) và implicit_opinion_failure (790).
+
+> Cập nhật 2026-10-16: con số `implicit_opinion_failure (790)` ở trên được tính khi nhánh opinion chưa khử trùng lặp với `wrong_field_mismatches`, trong khi `implicit_target_failure (1184)` đã khử. Hai số này vì vậy **không so sánh trực tiếp với nhau**. Lỗi đã được sửa trong `capstone/evaluation/metrics.py`; muốn trích dẫn con số opinion thì phải chạy lại `python -m capstone.error_analysis` trên `predictions.jsonl` của sáu run bằng code sau bản sửa. Các chỉ số P/R/F1 trong báo cáo này không bị ảnh hưởng vì đây chỉ là cờ chẩn đoán. Trong các trường của mismatch, opinion (1030) xuất hiện nhiều nhất, tiếp theo aspect (477), target (469), sentiment (249).
 
 Các số đếm error-type là số lần gắn cờ qua artifacts của sáu run; một mẫu có thể có nhiều cờ lỗi nên các nhóm không loại trừ nhau. 2,997 error-analysis record có ít nhất một loại lỗi. Không sửa tay metrics hay predictions.
 

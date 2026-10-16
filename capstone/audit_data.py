@@ -46,8 +46,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--source-mode",
         choices=("provided_split", "xml"),
-        default="provided_split",
-        help="audit supplied TXT splits by default; use xml only for a separate XML corpus audit",
+        default="xml",
+        help="audit the XML corpus by default; use provided_split to audit the supplied TXT splits",
     )
     parser.add_argument(
         "--unannotated-manifest",

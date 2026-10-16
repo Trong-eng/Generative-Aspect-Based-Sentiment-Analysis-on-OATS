@@ -89,6 +89,7 @@ def prepare_domain(
         manifest = None
         splits: dict[str, list[SentenceRecord]] = {}
         issues: list[DataIssue] = []
+        issues_by_split: dict[str, list[DataIssue]] = {}
         for split_name, split_path in paths.split_files.items():
             source_rows = parse_original_split_file(split_path)
             rows = [
@@ -104,12 +105,19 @@ def prepare_domain(
             cleaned_rows = clean_split_rows(
                 rows,
                 sentiment_mode=sentiment_mode,
-                source_path=str(split_path.resolve()),
+                # Keep the path as configured (usually relative to the project root) so
+                # processed data stays portable between machines and checkouts.
+                source_path=str(split_path),
             )
             splits[split_name] = cleaned_rows.rows
+            issues_by_split[split_name] = list(cleaned_rows.issues)
             issues.extend(cleaned_rows.issues)
         split_stats = {
-            split_name: audit_sentence_rows(rows, split=split_name)
+            split_name: audit_sentence_rows(
+                rows,
+                issues=issues_by_split.get(split_name, []),
+                split=split_name,
+            )
             for split_name, rows in splits.items()
         }
         all_retained_reviews: list = []
@@ -201,7 +209,7 @@ def prepare_domain(
     }
     if split_mode == "provided_split":
         source_paths = {
-            f"provided_{split_name}_txt": str(split_path.resolve())
+            f"provided_{split_name}_txt": str(split_path)
             for split_name, split_path in paths.split_files.items()
         }
         source_fingerprints = {
