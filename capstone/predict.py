@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -94,12 +95,62 @@ def _known_aspects(config: dict[str, Any] | None, checkpoint: Path) -> set[str]:
     return _validated_inventory(prepared_metadata, prepared_metadata_path)
 
 
-def predict_rows(
+@dataclass
+class LoadedPredictor:
+    """A checkpoint kept in memory with its decoding settings and aspect inventory.
+
+    The CLI loads one per invocation; a long-running service loads one per
+    (domain, model) and reuses it across requests.
+    """
+
+    model_type: str
+    checkpoint_path: Path
+    model: Any
+    parser: Any
+    known_aspects: set[str]
+    max_input_length: int
+    num_beams: int
+    max_new_tokens: int
+    early_stopping: Any
+    batch_size: int
+
+    def predict(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        outputs: list[dict[str, Any]] = []
+        for start in range(0, len(rows), self.batch_size):
+            batch = rows[start:start + self.batch_size]
+            generations = self.model.generate(
+                [str(row["text"]) for row in batch],
+                max_input_length=self.max_input_length,
+                num_beams=self.num_beams,
+                max_new_tokens=self.max_new_tokens,
+                early_stopping=self.early_stopping,
+            )
+            for row, raw_generation in zip(batch, generations):
+                parsed = self.parser(raw_generation, known_aspects=self.known_aspects)
+                output = {
+                    "text": row["text"],
+                    "quadruples": [quad.to_dict() if hasattr(quad, "to_dict") else {
+                        "target": quad.target,
+                        "aspect": quad.aspect,
+                        "opinion": quad.opinion,
+                        "sentiment": quad.sentiment,
+                    } for quad in parsed.quadruples],
+                    "raw_generation": raw_generation,
+                    "invalid_predictions": parsed.invalid_predictions,
+                }
+                for identifier in ("review_id", "sentence_id", "id"):
+                    if identifier in row:
+                        output[identifier] = row[identifier]
+                outputs.append(output)
+        return outputs
+
+
+def load_predictor(
     checkpoint: str | Path,
     model_type: str,
-    rows: list[dict[str, Any]],
     config_path: str | Path | None = None,
-) -> list[dict[str, Any]]:
+) -> LoadedPredictor:
+    """Resolve a checkpoint, validate it against its config, and load the model once."""
     if model_type not in {"gas", "paraphrase"}:
         raise ValueError("model_type must be gas or paraphrase")
     checkpoint_path = resolve_checkpoint(checkpoint)
@@ -109,48 +160,36 @@ def predict_rows(
             f"--model-type {model_type!r} does not match the checkpoint config model type "
             f"{config.get('model', {}).get('type')!r}"
         )
-    model = Seq2SeqGenerator.from_checkpoint(checkpoint_path)
-    parser = parse_gas_generation if model_type == "gas" else parse_paraphrase_generation
     generation = config.get("generation", {}) if config else {}
     sequence = config.get("sequence", {}) if config else {}
     evaluation = config.get("evaluation", {}) if config else {}
     inference = config.get("inference", {}) if config else {}
-    max_input_length = int(sequence.get("max_input_length", 256))
-    num_beams = int(generation.get("num_beams", 1))
-    max_new_tokens = int(generation.get("max_new_tokens", 256))
-    early_stopping = generation.get("early_stopping", False)
     batch_size = int(inference.get("batch_size", evaluation.get("batch_size", 16)))
     if batch_size < 1:
         raise ValueError("Inference batch size must be positive")
     known_aspects = _known_aspects(config, checkpoint_path)
-    outputs: list[dict[str, Any]] = []
-    for start in range(0, len(rows), batch_size):
-        batch = rows[start:start + batch_size]
-        generations = model.generate(
-            [str(row["text"]) for row in batch],
-            max_input_length=max_input_length,
-            num_beams=num_beams,
-            max_new_tokens=max_new_tokens,
-            early_stopping=early_stopping,
-        )
-        for row, raw_generation in zip(batch, generations):
-            parsed = parser(raw_generation, known_aspects=known_aspects)
-            output = {
-                "text": row["text"],
-                "quadruples": [quad.to_dict() if hasattr(quad, "to_dict") else {
-                    "target": quad.target,
-                    "aspect": quad.aspect,
-                    "opinion": quad.opinion,
-                    "sentiment": quad.sentiment,
-                } for quad in parsed.quadruples],
-                "raw_generation": raw_generation,
-                "invalid_predictions": parsed.invalid_predictions,
-            }
-            for identifier in ("review_id", "sentence_id", "id"):
-                if identifier in row:
-                    output[identifier] = row[identifier]
-            outputs.append(output)
-    return outputs
+    model = Seq2SeqGenerator.from_checkpoint(checkpoint_path)
+    return LoadedPredictor(
+        model_type=model_type,
+        checkpoint_path=checkpoint_path,
+        model=model,
+        parser=parse_gas_generation if model_type == "gas" else parse_paraphrase_generation,
+        known_aspects=known_aspects,
+        max_input_length=int(sequence.get("max_input_length", 256)),
+        num_beams=int(generation.get("num_beams", 1)),
+        max_new_tokens=int(generation.get("max_new_tokens", 256)),
+        early_stopping=generation.get("early_stopping", False),
+        batch_size=batch_size,
+    )
+
+
+def predict_rows(
+    checkpoint: str | Path,
+    model_type: str,
+    rows: list[dict[str, Any]],
+    config_path: str | Path | None = None,
+) -> list[dict[str, Any]]:
+    return load_predictor(checkpoint, model_type, config_path).predict(rows)
 
 
 def main(argv: list[str] | None = None) -> int:
