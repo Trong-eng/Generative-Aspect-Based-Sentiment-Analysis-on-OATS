@@ -553,6 +553,21 @@ Trước khi so khớp, cả nhãn chuẩn lẫn dự đoán đều đi qua bư�
 của giá trị ngầm hiểu, và đối chiếu khía cạnh với danh mục của lĩnh vực. Việc đối chiếu danh mục quan trọng vì mô hình
 sinh tự do có thể tạo ra một khía cạnh không tồn tại; những trường hợp đó được đánh dấu thay vì âm thầm tính là sai.
 
+\subsection{Chỉ số nới lỏng cho dashboard}
+\label{sec:relaxed}
+
+Chỉ số chính của bài toán đòi đúng cả bốn thành phần, trong đó có hai chuỗi tự do là đối tượng và cụm ý kiến. Nhưng
+dashboard ở Mục~\ref{sec:thietkedashboard} chỉ tiêu thụ cặp \emph{(khía cạnh, cảm xúc)}. Một dự đoán
+\code{(bathroom, rooms cleanliness, \enquote{filthy}, negative)} cho nhãn chuẩn
+\code{(room, rooms cleanliness, \enquote{dirty}, negative)} bị chỉ số chính tính là \emph{sai hoàn toàn}, trong khi với
+dashboard nó \emph{đúng}: vẫn là một bài đánh giá tiêu cực về độ sạch phòng.
+
+Nếu chỉ có chỉ số chính thì không có cách nào biết dashboard đáng tin đến đâu. Vì vậy bước đánh giá xuất thêm hai chỉ số
+nới lỏng, tính bằng đúng cơ chế đếm chống trùng lặp của chỉ số chính nhưng sau khi chiếu quadruple xuống một tập con
+các trường: chỉ \code{aspect}, và cặp \code{aspect + sentiment}. Trường \code{definition} đi kèm trong tệp JSON ghi
+thẳng rằng đây là chỉ số nới lỏng và không được trình bày như kết quả ASQP --- để con số dễ nhìn hơn không bị trích dẫn
+nhầm chỗ.
+
 Ngoài P/R/F1 khớp hoàn toàn, bước đánh giá còn xuất các chẩn đoán: độ chính xác theo từng thành phần, kết quả theo số
 lượng quadruple trong câu, và phân loại lỗi (thiếu quadruple, thừa quadruple, sai một thành phần, hỏng về đối tượng hoặc
 ý kiến ngầm hiểu).
@@ -711,8 +726,52 @@ Lỗi của \code{original\_split} là \enquote{một dòng khớp với nhiều
 duy nhất một câu}: khi cùng một câu xuất hiện nhiều lần trong bộ dữ liệu, bước căn chỉnh không biết dòng đó thuộc về
 bài đánh giá nào. Phát hiện quan trọng là \code{clean\_split} --- giao thức có kiểm tra rò rỉ --- vẫn chạy được trên cả
 ba lĩnh vực. Nói cách khác, giao thức chính của dự án không hỏng, và việc chạy lại ma trận thí nghiệm theo
-\code{clean\_split} là khả thi. Repository giữ sẵn một cấu hình \code{clean\_split} với thư mục dữ liệu và thư mục kết
+\code{clean\_split} là khả thi. Repository giữ sẵn sáu cấu hình \code{clean\_split} với thư mục dữ liệu và thư mục kết
 quả riêng để giao thức này không bị bỏ quên.
+
+Dữ liệu cho giao thức này đã được chuẩn bị xong cho cả ba lĩnh vực, chia 80/10/10 ở mức bài đánh giá, và bước audit xác
+nhận \code{no\_review\_leakage: true} ở cả ba. Phần còn thiếu chỉ là huấn luyện, vì lý do phần cứng ở
+Mục~\ref{sec:phancung}.
+
+\section{Hạ tầng huấn luyện và giới hạn phần cứng}
+\label{sec:phancung}
+
+Nhóm đã thử chạy ma trận \code{clean\_split} trên một máy xách tay có GPU RTX 5050 8\,GB VRAM và 16\,GB RAM. Lần thử
+không hoàn tất, và các số đo thu được đáng ghi lại vì chúng quyết định việc chọn máy cho lần chạy sau.
+
+\begin{table}[H]
+\centering
+\caption{Thời gian một bước huấn luyện, đo trên RTX 5050 8\,GB, batch 16, chuỗi vào/ra 128.}
+\label{tab:tocdo}
+\begin{tabular}{llr}
+\toprule
+\textbf{Mô hình} & \textbf{Precision} & \textbf{Giây/bước} \\
+\midrule
+Paraphrase & fp32 & 0,5 \\
+GAS & fp32 & 3,8 \\
+GAS & bf16 & 29,0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Ba điều rút ra:
+
+\begin{itemize}
+  \item \textbf{Nút thắt là VRAM, không phải độ dài chuỗi.} GAS chậm gấp 8 lần Paraphrase trên cùng mô hình và cùng
+        kích thước lô. Mức chiếm VRAM đo được là 7{,}4--7{,}6\,GB trên card 8\,GB; phần vượt bị hệ điều hành đẩy sang
+        RAM hệ thống, và tốc độ sụp theo.
+  \item \textbf{Mixed precision không phải lúc nào cũng nhanh hơn.} Giả thiết ban đầu của nhóm là bật bf16 sẽ giảm bộ
+        nhớ và tăng tốc. Đo thực tế cho kết quả ngược lại: bf16 chậm hơn fp32 tám lần, vì autocast vẫn giữ trọng số
+        gốc ở fp32 rồi tạo thêm bản bf16 cho từng phép toán, tức \emph{tăng} đỉnh bộ nhớ trên một card vốn đã đầy.
+        Tuỳ chọn \code{training.precision} vẫn được giữ lại trong mã, mặc định \code{fp32}, kèm cảnh báo này.
+  \item \textbf{Hai lượt huấn luyện không được chạy song song.} Một lần chạy chồng nhau làm lượt đầu dừng với
+        \code{CUDA error: CUBLAS\_STATUS\_EXECUTION\_FAILED} ở epoch 12 sau hơn 45 phút. Pipeline không hỗ trợ chạy
+        tiếp dở dang, nên toàn bộ lượt đó phải làm lại.
+\end{itemize}
+
+Các bài học này được ghi thành hướng dẫn vận hành trong repository để lần chạy sau trên máy mạnh hơn không lặp lại,
+trong đó có một bước bắt buộc: đo giây/bước trong vài phút đầu và dừng lại hỏi nếu tốc độ cho thấy tổng thời gian vượt
+dự tính.
 
 \section{Kiểm thử phần mềm}
 
@@ -723,7 +782,7 @@ quả riêng để giao thức này không bị bỏ quên.
 \toprule
 \textbf{Phạm vi} & \textbf{Số test} & \textbf{Nội dung chính} \\
 \midrule
-Pipeline (pytest)   & 123 & Đọc XML, làm sạch, chia tập và chống rò rỉ, dấu vân tay, hai bộ chuyển đổi đầu ra, chuẩn hóa và tính điểm, các lệnh dòng lệnh \\
+Pipeline (pytest)   & 133 & Đọc XML, làm sạch, chia tập và chống rò rỉ, dấu vân tay, hai bộ chuyển đổi đầu ra, chuẩn hóa và tính điểm (gồm chỉ số nới lỏng), đường dẫn cấu hình lồng thư mục, lựa chọn precision, các lệnh dòng lệnh \\
 Service (pytest)    & 27  & Hợp đồng hai điểm cuối, echo định danh theo lô, nạp mô hình một lần, các đường lỗi \code{MODEL\_NOT\_READY} và \code{PREDICTION\_FAILED}, CORS, đọc tệp cấu hình phục vụ \\
 Giao diện (Vitest)  & 98  & Trạng thái tải/lỗi/rỗng, hiển thị quadruple và giá trị ngầm hiểu, đọc tệp CSV/TXT/JSONL/JSON, quy tắc đếm theo bài đánh giá, xuất CSV, chia lô và tiếp tục khi lỗi \\
 \bottomrule
@@ -756,11 +815,12 @@ kiểm chứng được, và chế độ dữ liệu mẫu được dán nhãn t
 \section{Hướng phát triển}
 
 \begin{enumerate}
-  \item \textbf{Đo độ chính xác của cặp (khía cạnh, cảm xúc).} Dashboard chỉ dựa vào cặp này, trong khi F1 hiện tại đòi
-        hỏi đúng cả bốn thành phần --- một tiêu chí nghiêm ngặt hơn nhiều so với nhu cầu của dashboard. Đây là việc nên
-        làm trước tiên, vì nó quyết định có được phép đưa dashboard cho người dùng thật hay không.
+  \item \textbf{Lấy số cho cặp (khía cạnh, cảm xúc).} Chỉ số đã được cài đặt (Mục~\ref{sec:relaxed}) nhưng nó được tính
+        lúc đánh giá, nên sáu lượt chạy cũ chưa có số này. Cần chạy lại bước đánh giá trên \code{predictions.jsonl} để
+        biết dashboard đáng tin đến đâu trước khi đưa cho người dùng thật.
   \item \textbf{Chạy lại ma trận theo \code{clean\_split}} để có kết quả kèm bảo đảm không rò rỉ cấp bài đánh giá, rồi
-        báo cáo song song hai giao thức.
+        báo cáo song song hai giao thức. Dữ liệu đã sẵn sàng và đã kiểm tra không rò rỉ; chỉ còn phần huấn luyện, cần
+        máy có VRAM lớn hơn theo Mục~\ref{sec:phancung}.
   \item \textbf{Giao thức năm seed} (30 lần huấn luyện, 30 lần đánh giá) để báo cáo trung bình và độ lệch chuẩn.
   \item \textbf{Sửa bước căn chỉnh XML} của \code{original\_split} cho trường hợp câu trùng lặp.
   \item \textbf{So sánh theo thời gian trên dashboard:} thêm cột ngày để doanh nghiệp kiểm chứng xem sau khi cải thiện
