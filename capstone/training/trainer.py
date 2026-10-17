@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import math
 import subprocess
@@ -150,6 +151,23 @@ def _append_jsonl(path: Path, value: Any) -> None:
         stream.write(json.dumps(value, ensure_ascii=False) + "\n")
 
 
+def _autocast_factory(training: dict[str, Any], torch: Any, device: Any) -> tuple[str, Callable[[], Any]]:
+    """Pick the forward-pass precision context for training and validation.
+
+    Default `fp32` keeps earlier runs reproducible. `bf16` needs no loss scaling and avoids
+    the fp16 overflow T5 is known for, but is refused on hardware that cannot do it rather
+    than silently falling back, so a config never claims a precision it did not use.
+    """
+    precision = str(training.get("precision", "fp32")).lower()
+    if precision not in {"fp32", "bf16"}:
+        raise ValueError("training.precision must be 'fp32' or 'bf16'")
+    if precision == "fp32":
+        return precision, contextlib.nullcontext
+    if getattr(device, "type", str(device)) != "cuda" or not torch.cuda.is_bf16_supported():
+        raise ValueError("training.precision 'bf16' requires a CUDA device with bfloat16 support")
+    return precision, lambda: torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+
+
 def train_model(config_path: str | Path) -> Path:
     """Train the configured model and return the selected checkpoint path."""
     config = load_config(config_path)
@@ -241,6 +259,10 @@ def train_model(config_path: str | Path) -> Path:
         num_training_steps=total_updates,
     )
     clip_norm = float(training.get("max_grad_norm", 1.0))
+
+    precision, autocast = _autocast_factory(training, torch, device)
+    logger.info("Training in %s precision", precision)
+
     best_f1 = -1.0
     best_checkpoint: Path | None = None
     history: list[dict[str, Any]] = []
@@ -267,7 +289,8 @@ def train_model(config_path: str | Path) -> Path:
         accumulated_group_loss = 0.0
         for batch_index, batch in enumerate(train_loader, start=1):
             batch = {key: value.to(device) for key, value in batch.items()}
-            outputs = model(**batch)
+            with autocast():
+                outputs = model(**batch)
             loss = outputs.loss
             if not torch.isfinite(loss):
                 raise FloatingPointError(f"Non-finite training loss at epoch {epoch}, batch {batch_index}")
@@ -300,16 +323,17 @@ def train_model(config_path: str | Path) -> Path:
             record_offset = 0
             for batch in dev_loader:
                 batch = {key: value.to(device) for key, value in batch.items()}
-                outputs = model(**batch)
+                with autocast():
+                    outputs = model(**batch)
+                    generated = model.generate(
+                        input_ids=batch["input_ids"],
+                        attention_mask=batch["attention_mask"],
+                        num_beams=int(config["generation"]["num_beams"]),
+                        max_new_tokens=int(config["generation"]["max_new_tokens"]),
+                        early_stopping=config["generation"]["early_stopping"],
+                    )
                 validation_loss += float(outputs.loss.detach().cpu())
                 validation_batches += 1
-                generated = model.generate(
-                    input_ids=batch["input_ids"],
-                    attention_mask=batch["attention_mask"],
-                    num_beams=int(config["generation"]["num_beams"]),
-                    max_new_tokens=int(config["generation"]["max_new_tokens"]),
-                    early_stopping=config["generation"]["early_stopping"],
-                )
                 decoded = tokenizer.batch_decode(generated, skip_special_tokens=True)
                 batch_size = len(decoded)
                 source_records = dev_records[record_offset:record_offset + batch_size]
