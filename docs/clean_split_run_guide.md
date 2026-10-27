@@ -1,6 +1,6 @@
 # Hướng dẫn chạy ma trận `clean_split` seed 42
 
-Dành cho người (hoặc phiên Claude Code) chạy lại ma trận huấn luyện trên một máy có GPU đủ khỏe.
+Dành cho người chạy lại ma trận huấn luyện trên một máy có GPU đủ khỏe.
 Viết sau khi thử trên RTX 5050 8GB và gặp một loạt vấn đề, ghi lại ở mục "Những cái bẫy đã gặp".
 
 ## Mục tiêu
